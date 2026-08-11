@@ -7,15 +7,17 @@ const port = Number(process.env.PORT) || 3001;
 
 app.use(express.json());
 
-app.listen(port, () => {
-  console.log(`TokTickIT API listening on port ${port}`);
-});
-
 async function verifyPrismaConnection() {
-  await prisma.$connect();
-  console.log('Prisma connected to PostgreSQL successfully.');
+  try {
+    await prisma.$connect();
+    console.log('Connected to database');
+  } catch (error) {
+    console.error(`Failed to connect to database: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
-verifyPrismaConnection().catch((error) => {
-  console.error('Prisma failed to connect to PostgreSQL:', error);
+verifyPrismaConnection();
+
+app.listen(port, () => {
+  console.log(`TokTickIT API listening on port ${port}`);
 });
