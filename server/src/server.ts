@@ -2,10 +2,17 @@ import 'dotenv/config';
 import express from 'express';
 import prisma from './prisma.js';
 
-const app = express();
+export const app = express();
 const port = Number(process.env.PORT) || 3001;
 
 app.use(express.json());
+
+app.get('/api/health', (_req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'TokTickIT API'
+  });
+});
 
 async function verifyPrismaConnection() {
   try {
@@ -18,6 +25,8 @@ async function verifyPrismaConnection() {
 
 verifyPrismaConnection();
 
-app.listen(port, () => {
-  console.log(`TokTickIT API listening on port ${port}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(port, () => {
+    console.log(`TokTickIT API listening on port ${port}`);
+  });
+}
