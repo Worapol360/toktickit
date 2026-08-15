@@ -37,3 +37,7 @@ package-lock.json
 
 # Prisma generated output (not generated yet for Issue 1)
 # Prisma client generation is not committed in this starter scope.
+
+# Instructions / Specs
+softEng_lab1.txt
+*.txt

@@ -14,6 +14,20 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+app.get('/api/categories', async (_req, res) => {
+  const categories = await prisma.category.findMany({
+    select: {
+      id: true,
+      name: true
+    },
+    orderBy: {
+      id: 'asc'
+    }
+  });
+
+  res.status(200).json({ categories });
+});
+
 async function verifyPrismaConnection() {
   try {
     await prisma.$connect();
