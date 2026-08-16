@@ -38,12 +38,13 @@ gitignore
 *To Peer:*
 1.แก้ไฟล์ docker-compose.yml: มีการใส่ hardcode password ตรงๆ
 POSTGRES_PASSWORD: toktickit_dev_password
-
 ช่วยแก้ให้ดึงค่าจากตัวแปรใน .env แทน
+
 2.Pass all acceptance criteria for Issue 3
 
 - **Comment Issue 4:** 
-*From Peer:*
+*From Peer:* ครบถ้วนตามเกณฑ์ของ Issue4
 *To Peer:*
 1.- ตอนนี้เปิด PR เข้า main ทำให้มีไฟล์ส่วนเกินติดมา ให้เปลี่ยน base branch เป็น lab1-staging
 - เอาไฟล์ส่วนเกินออก ใน PR ดันแค่ไฟล์ source หรือ test ที่เกี่ยวกับ Issue 4 พอ
+2.Pass all acceptance criteria for Issue 4
