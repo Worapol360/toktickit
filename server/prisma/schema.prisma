@@ -1,0 +1,16 @@
+// This file is intentionally minimal for Issue 1.
+// Prisma is initialized so the service can connect to PostgreSQL using DATABASE_URL.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Category {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+}
