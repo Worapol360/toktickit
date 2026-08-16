@@ -36,7 +36,7 @@ describe('TokTickIT category list', () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toContain('Unable to load categories from TokTickIT API');
+      expect(screen.getByRole('alert').textContent).toContain('System Status: Offline — Unable to connect to TokTickIT API');
     });
   });
 });

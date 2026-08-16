@@ -36,7 +36,7 @@ export default function App() {
       } catch {
         if (isActive) {
           setCategories([]);
-          setErrorMessage('Unable to load categories from TokTickIT API');
+          setErrorMessage('System Status: Offline — Unable to connect to TokTickIT API');
         }
       } finally {
         if (isActive) {
@@ -72,7 +72,7 @@ export default function App() {
       setErrorMessage('');
     } catch {
       setCategories([]);
-      setErrorMessage('Unable to load categories from TokTickIT API');
+      setErrorMessage('System Status: Offline — Unable to connect to TokTickIT API');
     } finally {
       setIsLoading(false);
     }
@@ -88,7 +88,7 @@ export default function App() {
 
         <div className="d-flex justify-content-center mb-4">
           <button type="button" className="btn btn-primary px-4" onClick={refreshCategories}>
-            Refresh Categories
+            Check System
           </button>
         </div>
 
