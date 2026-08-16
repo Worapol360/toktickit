@@ -7,7 +7,8 @@
 - **PR Link Issue 1:** https://github.com/Worapol360/toktickit/pull/5
 - **PR Link Issue 2:** https://github.com/Worapol360/toktickit/pull/6
 - **PR Link Issue 3:** https://github.com/Worapol360/toktickit/pull/7
-- **PR Link Issue 4:** 
+- **PR Link Issue 4:** https://github.com/Worapol360/toktickit/pull/8
+- **PR Link lab1-staging:** https://github.com/Worapol360/toktickit/pull/9
 
 - **Comment Issue 1:**
 *From Peer:*
