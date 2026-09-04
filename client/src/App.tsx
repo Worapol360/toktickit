@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { RequesterSelectionScreen } from './lab-02/RequesterSelection';
+import { CreateTicket } from './lab-02/CreateTicket';
 
 type Requester = {
   id: number;
@@ -10,6 +11,11 @@ type Requester = {
 };
 
 type Category = {
+  id: number;
+  name: string;
+};
+
+type RelatedSystem = {
   id: number;
   name: string;
 };
@@ -27,10 +33,12 @@ function getStoredRequesterId() {
 export default function App() {
   const [requesters, setRequesters] = useState<Requester[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [relatedSystems, setRelatedSystems] = useState<RelatedSystem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [categoriesLoading, setCategoriesLoading] = useState(true);
   const [categoriesError, setCategoriesError] = useState('');
+  const [relatedSystemsError, setRelatedSystemsError] = useState('');
   const [selectedRequesterId, setSelectedRequesterId] = useState<string>(getStoredRequesterId());
   const [pendingRequesterId, setPendingRequesterId] = useState<string>(getStoredRequesterId());
   const [currentRoute, setCurrentRoute] = useState(() => {
@@ -69,6 +77,21 @@ export default function App() {
 
   useEffect(() => {
     void loadRequesters();
+  }, []);
+
+  useEffect(() => {
+    async function loadRelatedSystems() {
+      try {
+        const response = await fetch('/api/related-systems');
+        const payload = await response.json() as { relatedSystems?: RelatedSystem[] };
+        if (!response.ok || !Array.isArray(payload.relatedSystems)) throw new Error('Failed to load related systems');
+        setRelatedSystems(payload.relatedSystems);
+      } catch {
+        setRelatedSystemsError('Unable to load related systems.');
+      }
+    }
+
+    void loadRelatedSystems();
   }, []);
 
   useEffect(() => {
@@ -178,6 +201,17 @@ export default function App() {
     );
   }
 
+  if (currentRoute === '/create-ticket') {
+    return (
+      <CreateTicket
+        requesterId={selectedRequesterId}
+        categories={categories}
+        relatedSystems={relatedSystems}
+        onCancel={() => navigateTo('/')}
+      />
+    );
+  }
+
   return (
     <main style={{ minHeight: '100vh', background: '#F6FAF8', color: '#17221C', padding: '24px' }}>
       <header style={{ background: '#006B3C', color: '#FFFFFF', padding: '16px 24px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -186,7 +220,7 @@ export default function App() {
         </div>
         <nav style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <span aria-current="page">My Tickets</span>
-          <button type="button" style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.35)', color: '#FFFFFF', borderRadius: '6px', padding: '8px 12px' }}>
+          <button type="button" onClick={() => navigateTo('/create-ticket')} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.35)', color: '#FFFFFF', borderRadius: '6px', padding: '8px 12px' }}>
             Create Ticket
           </button>
         </nav>

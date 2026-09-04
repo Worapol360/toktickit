@@ -10,6 +10,9 @@ model Category {
   id        Int      @id @default(autoincrement())
   name      String   @unique
   createdAt DateTime @default(now())
+  isActive  Boolean  @default(true)
+  code      String   @default("GENERAL")
+  tickets   Ticket[]
 }
 
 model RequesterUser {
@@ -20,6 +23,49 @@ model RequesterUser {
   isActive   Boolean  @default(true)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  tickets    Ticket[]
 
   @@map("requester_user")
+}
+
+model RelatedSystem {
+  id        Int      @id @default(autoincrement())
+  name      String
+  code      String   @unique
+  isActive  Boolean  @default(true)
+  tickets   Ticket[]
+  createdAt DateTime @default(now())
+}
+
+model Ticket {
+  id               Int             @id @default(autoincrement())
+  ticketNumber     String          @unique
+  summary          String
+  description      String
+  requestedPriority String
+  status           String          @default("New")
+  requesterId      Int
+  categoryId       Int
+  relatedSystemId  Int
+  requester        RequesterUser   @relation(fields: [requesterId], references: [id])
+  category         Category        @relation(fields: [categoryId], references: [id])
+  relatedSystem    RelatedSystem   @relation(fields: [relatedSystemId], references: [id])
+  attachments      Attachment[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([requesterId, createdAt(sort: Desc)])
+}
+
+model Attachment {
+  id            Int      @id @default(autoincrement())
+  ticketId      Int
+  fileName      String
+  fileSize      Int
+  fileType      String
+  filePath      String
+  isRemoved     Boolean  @default(false)
+  removalReason String?
+  createdAt     DateTime @default(now())
+  ticket        Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 }
