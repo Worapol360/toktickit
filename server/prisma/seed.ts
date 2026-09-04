@@ -15,6 +15,12 @@ const requesters = [
   { id: 5, name: 'Inactive User', email: 'inactive@example.com', department: 'Finance', isActive: false }
 ] as const;
 
+const relatedSystems = [
+  { name: 'File Services', code: 'FILE_SERVICES' },
+  { name: 'Email', code: 'EMAIL' },
+  { name: 'Network', code: 'NETWORK' }
+] as const;
+
 async function main() {
   for (const name of categoryNames) {
     await prisma.category.upsert({
@@ -36,7 +42,15 @@ async function main() {
     skipDuplicates: true
   });
 
-  console.log('Seeded categories and requesters successfully.');
+  for (const relatedSystem of relatedSystems) {
+    await prisma.relatedSystem.upsert({
+      where: { code: relatedSystem.code },
+      update: { name: relatedSystem.name, isActive: true },
+      create: relatedSystem
+    });
+  }
+
+  console.log('Seeded categories, related systems, and requesters successfully.');
 }
 
 main()
