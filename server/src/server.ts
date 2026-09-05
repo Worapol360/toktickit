@@ -226,7 +226,7 @@ app.get('/api/tickets', async (req, res) => {
         include: {
           category: true,
           relatedSystem: true,
-          attachments: { where: { isRemoved: false } }
+          attachments: { where: { removedAt: null } }
         },
         orderBy,
         skip: (page - 1) * pageSize,
@@ -325,7 +325,7 @@ app.post('/api/tickets/:id/attachments', (req, res, next) => {
 
     const ticket = await prisma.ticket.findFirst({
       where: { id: ticketId, requesterId: requester.id },
-      include: { attachments: { where: { isRemoved: false } } }
+      include: { attachments: { where: { removedAt: null } } }
     });
     if (!ticket) {
       errorResponse(res, 404, 'TICKET_NOT_FOUND', 'Ticket not found.');
@@ -409,7 +409,7 @@ app.get('/api/tickets/:ticketId/attachments/:attachmentId/download', async (req,
     const attachment = await prisma.attachment.findFirst({
       where: { id: attachmentId, ticketId, ticket: { requesterId: requester.id } }
     });
-    if (!attachment || attachment.isRemoved) {
+    if (!attachment || attachment.removedAt !== null) {
       errorResponse(res, 404, 'ATTACHMENT_NOT_FOUND', 'Attachment not found.');
       return;
     }
@@ -452,7 +452,7 @@ app.delete('/api/tickets/:ticketId/attachments/:attachmentId', async (req, res) 
       errorResponse(res, 404, 'ATTACHMENT_NOT_FOUND', 'Attachment not found.');
       return;
     }
-    if (attachment.isRemoved) {
+    if (attachment.removedAt !== null) {
       if (attachment.removalReason === reason) {
         res.status(200).json({ attachment: safeAttachment(attachment) });
         return;
@@ -460,7 +460,7 @@ app.delete('/api/tickets/:ticketId/attachments/:attachmentId', async (req, res) 
       errorResponse(res, 409, 'ATTACHMENT_ALREADY_REMOVED', 'Attachment has already been removed.');
       return;
     }
-    const updated = await prisma.attachment.update({ where: { id: attachmentId }, data: { isRemoved: true, removalReason: reason } });
+    const updated = await prisma.attachment.update({ where: { id: attachmentId }, data: { isRemoved: true, removedAt: new Date(), removalReason: reason } });
     res.status(200).json({ attachment: safeAttachment(updated) });
   } catch {
     errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to remove attachment.');
