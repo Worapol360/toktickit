@@ -11,7 +11,7 @@ model Category {
   name      String   @unique
   createdAt DateTime @default(now())
   isActive  Boolean  @default(true)
-  code      String   @default("GENERAL")
+  code      String   @unique
   tickets   Ticket[]
 }
 
