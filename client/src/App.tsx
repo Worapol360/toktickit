@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { RequesterSelectionScreen } from './lab-02/RequesterSelection';
 import { CreateTicket } from './lab-02/CreateTicket';
+import { RequesterTicketDetail } from './pages/RequesterTicketDetail';
 
 type Requester = {
   id: number;
@@ -208,6 +209,17 @@ export default function App() {
         categories={categories}
         relatedSystems={relatedSystems}
         onCancel={() => navigateTo('/')}
+      />
+    );
+  }
+
+  const ticketDetailMatch = currentRoute.match(/^\/tickets\/(\d+)$/);
+  if (ticketDetailMatch) {
+    return (
+      <RequesterTicketDetail
+        requesterId={selectedRequesterId}
+        ticketId={Number(ticketDetailMatch[1])}
+        onBack={() => navigateTo('/')}
       />
     );
   }
