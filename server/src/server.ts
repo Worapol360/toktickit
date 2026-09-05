@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import multer from 'multer';
+import type { Prisma } from '@prisma/client';
 import prisma from './prisma.js';
 
 export const app = express();
@@ -102,6 +103,118 @@ app.get('/api/related-systems', async (_req, res) => {
     res.status(200).json({ relatedSystems });
   } catch {
     errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to load related systems.');
+  }
+});
+
+const ticketQueryParameters = new Set(['search', 'status', 'priority', 'categoryId', 'sortBy', 'sortOrder', 'page', 'pageSize']);
+const ticketSortFields = new Set(['createdAt', 'ticketNumber', 'summary', 'requestedPriority', 'status']);
+const ticketSortOrders = new Set(['asc', 'desc']);
+
+function queryValue(value: unknown) {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function parsePositiveQueryInteger(value: string | undefined) {
+  if (value === undefined || value === '') return undefined;
+  if (!/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+app.get('/api/tickets', async (req, res) => {
+  try {
+    const requester = await getRequesterContext(req);
+    if (!requester) {
+      errorResponse(res, 400, 'REQUESTER_CONTEXT_INVALID', 'A valid active requester context is required.');
+      return;
+    }
+
+    const unknownParameter = Object.keys(req.query).find((parameter) => !ticketQueryParameters.has(parameter));
+    if (unknownParameter) {
+      errorResponse(res, 400, 'INVALID_QUERY_PARAMETER', `Unknown query parameter: ${unknownParameter}`);
+      return;
+    }
+
+    const search = queryValue(req.query.search)?.trim() ?? '';
+    const status = queryValue(req.query.status)?.trim() ?? '';
+    const priority = queryValue(req.query.priority)?.trim() ?? '';
+    const categoryIdValue = queryValue(req.query.categoryId)?.trim() ?? '';
+    const sortByValue = queryValue(req.query.sortBy)?.trim() ?? '';
+    const sortOrderValue = queryValue(req.query.sortOrder)?.trim() ?? '';
+    const pageValue = queryValue(req.query.page)?.trim() ?? '';
+    const pageSizeValue = queryValue(req.query.pageSize)?.trim() ?? '';
+    const fields: Record<string, string> = {};
+
+    const categoryId = parsePositiveQueryInteger(categoryIdValue);
+    const page = parsePositiveQueryInteger(pageValue) ?? 1;
+    const pageSize = parsePositiveQueryInteger(pageSizeValue) ?? 10;
+    if (categoryId === null) fields.categoryId = 'categoryId must be a positive integer';
+    if (page === null) fields.page = 'page must be a positive integer';
+    if (pageSize === null || pageSize > 100) fields.pageSize = 'pageSize must be between 1 and 100';
+    if (status && status !== 'New') fields.status = 'status must be New';
+    if (priority && !priorities.has(priority)) fields.priority = 'priority must be Low, Medium, High, or Urgent';
+    if (sortByValue && !ticketSortFields.has(sortByValue)) fields.sortBy = 'sortBy is not supported';
+    if (sortOrderValue && !ticketSortOrders.has(sortOrderValue)) fields.sortOrder = 'sortOrder must be asc or desc';
+    if (Object.values(req.query).some((value) => Array.isArray(value) || (typeof value !== 'string' && value !== undefined))) {
+      fields.query = 'Query parameters must have one scalar value';
+    }
+    if (Object.keys(fields).length > 0) {
+      errorResponse(res, 400, 'INVALID_QUERY_PARAMETER', 'Request query parameters are invalid.', fields);
+      return;
+    }
+
+    const sortBy = (sortByValue || 'createdAt') as 'createdAt' | 'ticketNumber' | 'summary' | 'requestedPriority' | 'status';
+    const sortOrder = (sortOrderValue || 'desc') as 'asc' | 'desc';
+    const where: Prisma.TicketWhereInput = {
+      requesterId: requester.id,
+      ...(search ? {
+        OR: [
+          { ticketNumber: { contains: search, mode: 'insensitive' } },
+          { summary: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } }
+        ]
+      } : {}),
+      ...(status ? { status } : {}),
+      ...(priority ? { requestedPriority: priority } : {}),
+      ...(categoryId ? { categoryId } : {})
+    };
+    const orderBy: Prisma.TicketOrderByWithRelationInput[] = [
+      { [sortBy]: sortOrder },
+      { id: 'desc' }
+    ];
+    const [totalItems, tickets] = await Promise.all([
+      prisma.ticket.count({ where }),
+      prisma.ticket.findMany({
+        where,
+        include: {
+          category: true,
+          relatedSystem: true,
+          attachments: { where: { isRemoved: false } }
+        },
+        orderBy,
+        skip: (page - 1) * pageSize,
+        take: pageSize
+      })
+    ]);
+    const totalPages = totalItems === 0 ? 0 : Math.ceil(totalItems / pageSize);
+
+    res.status(200).json({
+      tickets: tickets.map(({ attachments, ...ticket }) => ({
+        ...ticket,
+        attachments: attachments.map(({ filePath: _filePath, ...attachment }) => attachment)
+      })),
+      pagination: {
+        page,
+        pageSize,
+        totalItems,
+        totalPages,
+        hasNextPage: totalPages > 0 && page < totalPages,
+        hasPreviousPage: page > 1 && totalPages > 0
+      },
+      sort: { sortBy, sortOrder }
+    });
+  } catch {
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to load tickets.');
   }
 });
 
