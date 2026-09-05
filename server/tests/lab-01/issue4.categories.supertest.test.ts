@@ -24,10 +24,10 @@ afterEach(() => {
 describe('Issue 4 categories API', () => {
   it('returns categories from Prisma in a predictable order', async () => {
     findManyMock.mockResolvedValue([
-      { id: 1, name: 'Account and Access' },
-      { id: 2, name: 'Hardware' },
-      { id: 3, name: 'Software' },
-      { id: 4, name: 'Network' }
+      { id: 1, code: 'ACCOUNT_ACCESS', name: 'Account and Access', isActive: true },
+      { id: 2, code: 'HARDWARE', name: 'Hardware', isActive: true },
+      { id: 3, code: 'SOFTWARE', name: 'Software', isActive: true },
+      { id: 4, code: 'NETWORK', name: 'Network', isActive: true }
     ]);
 
     const response = await request(app).get('/api/categories');
@@ -35,20 +35,23 @@ describe('Issue 4 categories API', () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       categories: [
-        { id: 1, name: 'Account and Access' },
-        { id: 2, name: 'Hardware' },
-        { id: 3, name: 'Software' },
-        { id: 4, name: 'Network' }
+        { id: 1, code: 'ACCOUNT_ACCESS', name: 'Account and Access', isActive: true },
+        { id: 2, code: 'HARDWARE', name: 'Hardware', isActive: true },
+        { id: 3, code: 'SOFTWARE', name: 'Software', isActive: true },
+        { id: 4, code: 'NETWORK', name: 'Network', isActive: true }
       ]
     });
     expect(findManyMock).toHaveBeenCalledWith({
+      where: {
+        isActive: true
+      },
       select: {
         id: true,
-        name: true
+        code: true,
+        name: true,
+        isActive: true
       },
-      orderBy: {
-        id: 'asc'
-      }
+      orderBy: [{ name: 'asc' }, { id: 'asc' }]
     });
   });
 });

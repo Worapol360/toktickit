@@ -1,10 +1,10 @@
 import prisma from '../src/prisma.js';
 
-const categoryNames = [
-  'Account and Access',
-  'Hardware',
-  'Software',
-  'Network',
+const categories = [
+  { name: 'Account and Access', code: 'ACCOUNT_ACCESS', isActive: true },
+  { name: 'Hardware', code: 'HARDWARE', isActive: true },
+  { name: 'Software', code: 'SOFTWARE', isActive: true },
+  { name: 'Network', code: 'NETWORK', isActive: true },
 ] as const;
 
 const requesters = [
@@ -22,11 +22,11 @@ const relatedSystems = [
 ] as const;
 
 async function main() {
-  for (const name of categoryNames) {
+  for (const category of categories) {
     await prisma.category.upsert({
-      where: { name },
-      update: {},
-      create: { name },
+      where: { name: category.name },
+      update: { code: category.code, isActive: category.isActive },
+      create: category,
     });
   }
 

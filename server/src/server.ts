@@ -49,13 +49,16 @@ app.get('/api/health', (_req, res) => {
 
 app.get('/api/categories', async (_req, res) => {
   const categories = await prisma.category.findMany({
+    where: {
+      isActive: true
+    },
     select: {
       id: true,
-      name: true
+      code: true,
+      name: true,
+      isActive: true
     },
-    orderBy: {
-      id: 'asc'
-    }
+    orderBy: [{ name: 'asc' }, { id: 'asc' }]
   });
 
   res.status(200).json({ categories });
