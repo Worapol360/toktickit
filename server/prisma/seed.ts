@@ -1,27 +1,61 @@
 import prisma from '../src/prisma.js';
 
-const categoryNames = [
-  'Account and Access',
-  'Hardware',
-  'Software',
-  'Network',
+const categories = [
+  { name: 'Account and Access', code: 'ACCOUNT_ACCESS', isActive: true },
+  { name: 'Hardware', code: 'HARDWARE', isActive: true },
+  { name: 'Software', code: 'SOFTWARE', isActive: true },
+  { name: 'Network', code: 'NETWORK', isActive: true },
+] as const;
+
+const requesters = [
+  { id: 1, name: 'Aiko Tanaka', email: 'aiko@example.com', department: 'Finance', isActive: true },
+  { id: 2, name: 'Daniel Kim', email: 'daniel@example.com', department: 'IT', isActive: true },
+  { id: 3, name: 'Marcus Lee', email: 'marcus@example.com', department: 'Operations', isActive: true },
+  { id: 4, name: 'Priya Singh', email: 'priya@example.com', department: 'Support', isActive: true },
+  { id: 5, name: 'Inactive User', email: 'inactive@example.com', department: 'Finance', isActive: false }
+] as const;
+
+const relatedSystems = [
+  { name: 'File Services', code: 'FILE_SERVICES' },
+  { name: 'Email', code: 'EMAIL' },
+  { name: 'Network', code: 'NETWORK' }
 ] as const;
 
 async function main() {
-  for (const name of categoryNames) {
+  for (const category of categories) {
     await prisma.category.upsert({
-      where: { name },
-      update: {},
-      create: { name },
+      where: { name: category.name },
+      update: { code: category.code, isActive: category.isActive },
+      create: category,
     });
   }
 
-  console.log('Seeded categories successfully.');
+  await prisma.requesterUser.deleteMany();
+  await prisma.requesterUser.createMany({
+    data: requesters.map((requester) => ({
+      id: requester.id,
+      name: requester.name,
+      email: requester.email,
+      department: requester.department,
+      isActive: requester.isActive
+    })),
+    skipDuplicates: true
+  });
+
+  for (const relatedSystem of relatedSystems) {
+    await prisma.relatedSystem.upsert({
+      where: { code: relatedSystem.code },
+      update: { name: relatedSystem.name, isActive: true },
+      create: relatedSystem
+    });
+  }
+
+  console.log('Seeded categories, related systems, and requesters successfully.');
 }
 
 main()
   .catch((error) => {
-    console.error('Failed to seed categories:', error);
+    console.error('Failed to seed categories and requesters:', error);
     process.exitCode = 1;
   })
   .finally(async () => {

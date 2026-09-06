@@ -6,3 +6,24 @@ body {
 button {
   min-width: 180px;
 }
+
+.my-tickets-page { max-width: 1200px; margin: 32px auto; padding: 0 32px; }
+.my-tickets-heading, .ticket-filters, .pagination { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.my-tickets-heading { justify-content: space-between; align-items: start; margin-bottom: 24px; }
+.my-tickets-heading h1, .my-tickets-heading p { margin: 0; }
+.ticket-filters { background: #fff; border: 1px solid #d7e2dc; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+.ticket-filters label { display: grid; gap: 4px; min-width: 150px; font-weight: 600; }
+.ticket-filters input, .ticket-filters select, .ticket-filters button, .pagination button, .ticket-list-region button { min-height: 40px; }
+.ticket-list-region { background: #fff; border: 1px solid #d7e2dc; border-radius: 8px; padding: 24px; }
+.state-panel { text-align: center; padding: 40px 16px; }
+.state-panel h2 { margin-top: 0; }
+.error-banner { background: #fdecec; color: #b42318; padding: 16px; }
+.tickets-table { width: 100%; border-collapse: collapse; }
+.tickets-table th, .tickets-table td { padding: 12px 8px; border-bottom: 1px solid #d7e2dc; text-align: left; }
+.badge { display: inline-block; border-radius: 999px; padding: 4px 8px; font-weight: 600; }
+.priority-badge { background: #fff7db; color: #705000; }
+.status-badge { background: #eaf6f7; color: #176b87; }
+.ticket-cards { display: none; }
+.pagination { justify-content: center; margin-top: 20px; }
+@media (max-width: 991px) { .my-tickets-page { padding: 0 24px; } .ticket-filters label { flex: 1 1 220px; } }
+@media (max-width: 767px) { .my-tickets-page { padding: 0 16px; } .my-tickets-heading { display: grid; } .primary-action { width: 100%; } .tickets-table { display: none; } .ticket-cards { display: grid; gap: 16px; } .ticket-card { border: 1px solid #d7e2dc; border-radius: 8px; padding: 16px; overflow-wrap: anywhere; } .ticket-card h2 { margin-top: 0; font-size: 18px; } .ticket-card dl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } .ticket-card dt { font-weight: 600; } .ticket-card dd { margin: 0; } .ticket-card button { width: 100%; margin-top: 12px; } }

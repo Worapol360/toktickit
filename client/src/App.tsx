@@ -1,21 +1,188 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { RequesterSelectionScreen } from './lab-02/RequesterSelection';
+import { CreateTicket } from './lab-02/CreateTicket';
+import { RequesterTicketDetail } from './pages/RequesterTicketDetail';
+import { MyTickets } from './pages/MyTickets';
+
+type Requester = {
+  id: number;
+  name: string;
+  email: string;
+  department: string;
+  isActive: boolean;
+};
 
 type Category = {
   id: number;
   name: string;
 };
 
+type RelatedSystem = {
+  id: number;
+  name: string;
+};
+
+const SESSION_KEY = 'toktickit-selected-requester-id';
+
+function getStoredRequesterId() {
+  if (typeof window === 'undefined') {
+    return '';
+  }
+
+  return window.sessionStorage.getItem(SESSION_KEY) ?? '';
+}
+
+// --- Shared Green Zen layout: wraps every authenticated page ---
+function AppShell({
+  currentRoute,
+  selectedRequester,
+  onNavigate,
+  onChangeRequester,
+  children,
+}: {
+  currentRoute: string;
+  selectedRequester: Requester | null;
+  onNavigate: (route: string) => void;
+  onChangeRequester: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <main style={{ minHeight: '100vh', background: '#F6FAF8', color: '#17221C' }}>
+      <header
+        className="app-header"
+        style={{
+          background: '#006B3C',
+          color: '#FFFFFF',
+          padding: '16px 24px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
+        <div>
+          <strong>TokTickIT</strong>
+        </div>
+        <nav className="app-nav" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <button
+            type="button"
+            aria-current={currentRoute === '/' ? 'page' : undefined}
+            onClick={() => onNavigate('/')}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#FFFFFF',
+              padding: 0,
+              fontWeight: currentRoute === '/' ? 700 : 400,
+              textDecoration: currentRoute === '/' ? 'underline' : 'none',
+            }}
+          >
+            My Tickets
+          </button>
+          <button
+            type="button"
+            aria-current={currentRoute === '/create-ticket' ? 'page' : undefined}
+            onClick={() => onNavigate('/create-ticket')}
+            style={{
+              background: 'transparent',
+              border: '1px solid rgba(255,255,255,0.35)',
+              color: '#FFFFFF',
+              borderRadius: '6px',
+              padding: '8px 12px',
+              fontWeight: currentRoute === '/create-ticket' ? 700 : 400,
+            }}
+          >
+            Create Ticket
+          </button>
+        </nav>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span>{selectedRequester ? selectedRequester.name : 'No requester selected'}</span>
+          <button
+            type="button"
+            onClick={onChangeRequester}
+            style={{ background: '#FFFFFF', color: '#006B3C', border: 'none', borderRadius: '6px', padding: '8px 12px' }}
+          >
+            Change Requester
+          </button>
+        </div>
+      </header>
+
+      <section style={{ maxWidth: '1200px', margin: '32px auto', padding: '0 24px' }}>
+        {children}
+      </section>
+    </main>
+  );
+}
+
 export default function App() {
+  const [requesters, setRequesters] = useState<Requester[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [relatedSystems, setRelatedSystems] = useState<RelatedSystem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const [categoriesError, setCategoriesError] = useState('');
+  const [relatedSystemsError, setRelatedSystemsError] = useState('');
+  const [selectedRequesterId, setSelectedRequesterId] = useState<string>(getStoredRequesterId());
+  const [pendingRequesterId, setPendingRequesterId] = useState<string>(getStoredRequesterId());
+  const [currentRoute, setCurrentRoute] = useState(() => {
+    if (typeof window === 'undefined') {
+      return '/';
+    }
+
+    return window.location.pathname || '/';
+  });
+
+  const selectedRequester = useMemo(
+    () => requesters.find((requester) => String(requester.id) === selectedRequesterId) ?? null,
+    [requesters, selectedRequesterId]
+  );
+
+  async function loadRequesters() {
+    setLoading(true);
+    setError('');
+
+    try {
+      const response = await fetch('/api/requesters');
+      const payload = await response.json() as { requesters?: Requester[] };
+
+      if (!response.ok || !Array.isArray(payload.requesters)) {
+        throw new Error('Failed to load requesters');
+      }
+
+      setRequesters(payload.requesters);
+    } catch {
+      setRequesters([]);
+      setError('Unable to load Development Requesters. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadRequesters();
+  }, []);
+
+  useEffect(() => {
+    async function loadRelatedSystems() {
+      try {
+        const response = await fetch('/api/related-systems');
+        const payload = await response.json() as { relatedSystems?: RelatedSystem[] };
+        if (!response.ok || !Array.isArray(payload.relatedSystems)) throw new Error('Failed to load related systems');
+        setRelatedSystems(payload.relatedSystems);
+      } catch {
+        setRelatedSystemsError('Unable to load related systems.');
+      }
+    }
+
+    void loadRelatedSystems();
+  }, []);
 
   useEffect(() => {
     let isActive = true;
 
     async function loadCategories() {
-      setIsLoading(true);
-      setErrorMessage('');
+      setCategoriesLoading(true);
+      setCategoriesError('');
 
       try {
         const response = await fetch('/api/categories');
@@ -36,11 +203,11 @@ export default function App() {
       } catch {
         if (isActive) {
           setCategories([]);
-          setErrorMessage('System Status: Offline — Unable to connect to TokTickIT API');
+          setCategoriesError('System Status: Offline — Unable to connect to TokTickIT API');
         }
       } finally {
         if (isActive) {
-          setIsLoading(false);
+          setCategoriesLoading(false);
         }
       }
     }
@@ -52,61 +219,124 @@ export default function App() {
     };
   }, []);
 
-  async function refreshCategories() {
-    setIsLoading(true);
+  useEffect(() => {
+    setPendingRequesterId(selectedRequesterId);
+  }, [selectedRequesterId]);
 
-    try {
-      const response = await fetch('/api/categories');
+  useEffect(() => {
+    const handleRouteChange = () => {
+      setCurrentRoute(window.location.pathname || '/');
+    };
 
-      if (!response.ok) {
-        throw new Error('Failed to load categories');
-      }
+    window.addEventListener('popstate', handleRouteChange);
+    return () => window.removeEventListener('popstate', handleRouteChange);
+  }, []);
 
-      const payload = await response.json() as { categories?: Category[] };
+  useEffect(() => {
+    if (!selectedRequesterId && currentRoute !== '/select-requester') {
+      window.history.replaceState({}, '', '/select-requester');
+      setCurrentRoute('/select-requester');
+    }
 
-      if (!Array.isArray(payload.categories)) {
-        throw new Error('Unexpected categories payload');
-      }
+    if (selectedRequesterId && currentRoute === '/select-requester') {
+      window.history.replaceState({}, '', '/');
+      setCurrentRoute('/');
+    }
+  }, [selectedRequesterId, currentRoute]);
 
-      setCategories(payload.categories);
-      setErrorMessage('');
-    } catch {
-      setCategories([]);
-      setErrorMessage('System Status: Offline — Unable to connect to TokTickIT API');
-    } finally {
-      setIsLoading(false);
+  const navigateTo = (route: string) => {
+    window.history.pushState({}, '', route);
+    setCurrentRoute(route);
+  };
+
+  const handleContinue = () => {
+    if (!pendingRequesterId) {
+      return;
+    }
+
+    window.sessionStorage.setItem(SESSION_KEY, pendingRequesterId);
+    setSelectedRequesterId(pendingRequesterId);
+    navigateTo('/');
+  };
+
+  const handleRequesterSelectionChange = (nextValue: string) => {
+    setPendingRequesterId(nextValue);
+  };
+
+  const goToRequesterSelection = () => {
+    window.sessionStorage.removeItem(SESSION_KEY);
+    setSelectedRequesterId('');
+    setPendingRequesterId('');
+    navigateTo('/select-requester');
+  };
+
+  // Requester Selection screen: NO header/layout wraps this one.
+  if (currentRoute === '/select-requester') {
+    return (
+      <RequesterSelectionScreen
+        requesters={requesters}
+        loading={loading}
+        error={error}
+        selectedRequesterId={pendingRequesterId}
+        onSelectionChange={handleRequesterSelectionChange}
+        onContinue={handleContinue}
+        onRetry={loadRequesters}
+      />
+    );
+  }
+
+  // Determine which page content to render inside the shared shell.
+  let pageContent: ReactNode;
+
+  const ticketDetailMatch = currentRoute.match(/^\/tickets\/(\d+)$/);
+
+  if (currentRoute === '/create-ticket') {
+    pageContent = (
+      <CreateTicket
+        requesterId={selectedRequesterId}
+        categories={categories}
+        relatedSystems={relatedSystems}
+        onCancel={() => navigateTo('/')}
+      />
+    );
+  } else if (ticketDetailMatch) {
+    pageContent = (
+      <RequesterTicketDetail
+        requesterId={selectedRequesterId}
+        ticketId={Number(ticketDetailMatch[1])}
+        onBack={() => navigateTo('/')}
+      />
+    );
+  } else {
+    // Default / unknown route: normalize to "/" and show My Tickets.
+    if (currentRoute !== '/') {
+      window.history.replaceState({}, '', '/');
+      pageContent = null;
+    } else {
+      pageContent = (
+        <MyTickets
+          requesterId={selectedRequesterId}
+          onCreateTicket={() => navigateTo('/create-ticket')}
+          onViewTicket={(ticketId) => navigateTo(`/tickets/${ticketId}`)}
+        />
+      );
     }
   }
 
   return (
-    <main className="d-flex min-vh-100 align-items-center justify-content-center bg-light">
-      <section className="card shadow-sm border-0 rounded-4 p-4" style={{ width: 'min(92vw, 640px)' }}>
-        <div className="text-center mb-4">
-          <h1 className="display-6 fw-semibold mb-2">TokTickIT IT Service Desk</h1>
-          <p className="text-muted mb-0">Service categories loaded from PostgreSQL via Prisma</p>
-        </div>
-
-        <div className="d-flex justify-content-center mb-4">
-          <button type="button" className="btn btn-primary px-4" onClick={refreshCategories}>
-            Check System
-          </button>
-        </div>
-
-        {isLoading ? (
-          <p className="text-center text-muted mb-0" role="status">Loading categories...</p>
-        ) : errorMessage ? (
-          <p className="text-center text-danger mb-0" role="alert">{errorMessage}</p>
-        ) : (
-          <ul className="list-group list-group-flush">
-            {categories.map((category) => (
-              <li key={category.id} className="list-group-item d-flex justify-content-between align-items-center px-0">
-                <span>{category.name}</span>
-                <span className="badge text-bg-secondary rounded-pill">ID {category.id}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </main>
+    <AppShell
+      currentRoute={currentRoute}
+      selectedRequester={selectedRequester}
+      onNavigate={navigateTo}
+      onChangeRequester={goToRequesterSelection}
+    >
+      {currentRoute === '/create-ticket' && relatedSystemsError && (
+        <p className="text-danger" role="alert">{relatedSystemsError}</p>
+      )}
+      {currentRoute === '/create-ticket' && categoriesError && (
+        <p className="text-danger" role="alert">{categoriesError}</p>
+      )}
+      {pageContent}
+    </AppShell>
   );
 }
