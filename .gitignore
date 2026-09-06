@@ -41,3 +41,6 @@ package-lock.json
 # Instructions / Specs
 softEng_lab1.txt
 *.txt
+
+# Runtime attachment storage
+server/storage/
