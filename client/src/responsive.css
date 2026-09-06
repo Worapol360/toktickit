@@ -1,0 +1,45 @@
+/* Zen Green responsive overrides */
+
+.app-header {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.app-nav {
+  flex-wrap: wrap;
+}
+
+.create-ticket-form {
+  padding: 32px;
+}
+
+.create-ticket-form input:not([type="file"]),
+.create-ticket-form select,
+.create-ticket-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.create-ticket-form textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+@media (max-width: 767px) {
+  .create-ticket-main {
+    padding: 16px 12px;
+  }
+
+  .create-ticket-form {
+    padding: 20px 16px;
+  }
+
+  .app-header {
+    padding: 12px 16px;
+  }
+
+  .app-header > div:last-child {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

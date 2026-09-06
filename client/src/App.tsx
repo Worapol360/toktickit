@@ -49,6 +49,7 @@ function AppShell({
   return (
     <main style={{ minHeight: '100vh', background: '#F6FAF8', color: '#17221C' }}>
       <header
+        className="app-header"
         style={{
           background: '#006B3C',
           color: '#FFFFFF',
@@ -61,7 +62,7 @@ function AppShell({
         <div>
           <strong>TokTickIT</strong>
         </div>
-        <nav style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+        <nav className="app-nav" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <button
             type="button"
             aria-current={currentRoute === '/' ? 'page' : undefined}
