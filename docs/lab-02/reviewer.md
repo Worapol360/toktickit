@@ -14,7 +14,8 @@
 * **PR Link Issue fix 3:** https://github.com/Worapol360/toktickit/pull/19
 * **PR Link Issue 4:** https://github.com/Worapol360/toktickit/pull/20
 * **PR Link Issue 5:** https://github.com/Worapol360/toktickit/pull/21
-* **PR Link lab2-staging:** https://github.com/Worapol360/toktickit/pull/22
+* **PR Link Bug :** https://github.com/Worapol360/toktickit/pull/23
+* **PR Link lab2-staging:** https://github.com/Worapol360/toktickit/pull/24
 
 ---
 
