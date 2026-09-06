@@ -1,5 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import multer from 'multer';
 import type { Prisma } from '@prisma/client';
 import prisma from './prisma.js';
@@ -16,11 +19,13 @@ const upload = multer({
 const allowedFileTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
 const allowedExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.pdf']);
 const priorities = new Set(['Low', 'Medium', 'High', 'Urgent']);
+const attachmentRoot = path.resolve(process.env.ATTACHMENT_STORAGE_PATH ?? 'storage/attachments');
 
 type UploadedFile = {
   originalname: string;
   mimetype: string;
   size: number;
+  buffer: Buffer;
 };
 
 function errorResponse(res: express.Response, status: number, code: string, message: string, fields?: Record<string, string>) {
@@ -39,6 +44,38 @@ async function getRequesterContext(req: express.Request) {
 function ticketNumber() {
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   return `TICK-${date}-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
+}
+
+function parsePositiveId(value: string) {
+  if (!/^\d+$/.test(value)) return null;
+  const id = Number(value);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+function safeAttachment(attachment: { filePath: string; [key: string]: unknown }) {
+  const { filePath: _filePath, ...metadata } = attachment;
+  return metadata;
+}
+
+function attachmentExtension(fileName: string) {
+  return path.extname(fileName).toLowerCase();
+}
+
+async function storeAttachment(file: UploadedFile) {
+  await mkdir(attachmentRoot, { recursive: true });
+  const storedPath = path.join(attachmentRoot, `${randomUUID()}${attachmentExtension(file.originalname)}`);
+  await writeFile(storedPath, file.buffer);
+  return storedPath;
+}
+
+async function removeStoredFiles(paths: string[]) {
+  await Promise.all(paths.map(async (storedPath) => {
+    try {
+      await unlink(storedPath);
+    } catch {
+      // Cleanup is best effort after a failed coordinated operation.
+    }
+  }));
 }
 
 app.get('/api/health', (_req, res) => {
@@ -189,7 +226,7 @@ app.get('/api/tickets', async (req, res) => {
         include: {
           category: true,
           relatedSystem: true,
-          attachments: { where: { isRemoved: false } }
+          attachments: { where: { removedAt: null } }
         },
         orderBy,
         skip: (page - 1) * pageSize,
@@ -215,6 +252,218 @@ app.get('/api/tickets', async (req, res) => {
     });
   } catch {
     errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to load tickets.');
+  }
+});
+
+app.get('/api/tickets/:id', async (req, res) => {
+  try {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) {
+      errorResponse(res, 400, 'INVALID_TICKET_ID', 'Ticket ID must be a positive integer.');
+      return;
+    }
+    const requester = await getRequesterContext(req);
+    if (!requester) {
+      errorResponse(res, 400, 'REQUESTER_CONTEXT_INVALID', 'A valid active requester context is required.');
+      return;
+    }
+
+    const ticket = await prisma.ticket.findFirst({
+      where: { id, requesterId: requester.id },
+      include: { category: true, relatedSystem: true, attachments: true }
+    });
+    if (!ticket) {
+      errorResponse(res, 404, 'TICKET_NOT_FOUND', 'Ticket not found.');
+      return;
+    }
+
+    res.status(200).json({
+      ticket: {
+        ...ticket,
+        attachments: ticket.attachments.map(safeAttachment)
+      }
+    });
+  } catch {
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to load ticket.');
+  }
+});
+
+app.post('/api/tickets/:id/attachments', (req, res, next) => {
+  upload.array('attachments', 6)(req, res, (error: unknown) => {
+    if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+      errorResponse(res, 400, 'FILE_TOO_LARGE', 'Each attachment must be 5 MB or smaller.');
+      return;
+    }
+    if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_COUNT') {
+      errorResponse(res, 400, 'ATTACHMENT_LIMIT_EXCEEDED', 'A ticket can have at most 5 active attachments.');
+      return;
+    }
+    if (error) {
+      next(error);
+      return;
+    }
+    next();
+  });
+}, async (req, res) => {
+  const storedPaths: string[] = [];
+  try {
+    const ticketId = parsePositiveId(req.params.id);
+    if (ticketId === null) {
+      errorResponse(res, 400, 'INVALID_TICKET_ID', 'Ticket ID must be a positive integer.');
+      return;
+    }
+    const requester = await getRequesterContext(req);
+    if (!requester) {
+      errorResponse(res, 400, 'REQUESTER_CONTEXT_INVALID', 'A valid active requester context is required.');
+      return;
+    }
+    const files = ((req as express.Request & { files?: UploadedFile[] }).files) ?? [];
+    if (files.length === 0) {
+      errorResponse(res, 400, 'NO_FILE', 'At least one attachment is required.');
+      return;
+    }
+
+    const ticket = await prisma.ticket.findFirst({
+      where: { id: ticketId, requesterId: requester.id },
+      include: { attachments: { where: { removedAt: null } } }
+    });
+    if (!ticket) {
+      errorResponse(res, 404, 'TICKET_NOT_FOUND', 'Ticket not found.');
+      return;
+    }
+    if (ticket.attachments.length + files.length > 5) {
+      errorResponse(res, 409, 'ATTACHMENT_LIMIT_EXCEEDED', 'A ticket can have at most 5 active attachments.');
+      return;
+    }
+    for (const file of files) {
+      const extension = attachmentExtension(file.originalname);
+      if (!allowedFileTypes.has(file.mimetype) || !allowedExtensions.has(extension)) {
+        errorResponse(res, 400, 'UNSUPPORTED_FILE_TYPE', 'Attachments must be JPG, JPEG, PNG, WEBP, or PDF.');
+        return;
+      }
+    }
+
+    const createdAttachments = await prisma.$transaction(async (transaction) => {
+      const result = [];
+      for (const file of files) {
+        const storedPath = await storeAttachment(file);
+        storedPaths.push(storedPath);
+        result.push(await transaction.attachment.create({
+          data: {
+            ticketId,
+            fileName: file.originalname,
+            fileSize: file.size,
+            fileType: file.mimetype,
+            filePath: storedPath
+          }
+        }));
+      }
+      return result;
+    });
+    res.status(201).json({ attachments: createdAttachments.map(safeAttachment) });
+  } catch {
+    await removeStoredFiles(storedPaths);
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to upload attachments.');
+  }
+});
+
+app.get('/api/tickets/:ticketId/attachments/:attachmentId', async (req, res) => {
+  try {
+    const ticketId = parsePositiveId(req.params.ticketId);
+    const attachmentId = parsePositiveId(req.params.attachmentId);
+    if (ticketId === null || attachmentId === null) {
+      errorResponse(res, 400, 'INVALID_PATH_PARAMETER', 'Ticket and attachment IDs must be positive integers.');
+      return;
+    }
+    const requester = await getRequesterContext(req);
+    if (!requester) {
+      errorResponse(res, 400, 'REQUESTER_CONTEXT_INVALID', 'A valid active requester context is required.');
+      return;
+    }
+    const attachment = await prisma.attachment.findFirst({
+      where: { id: attachmentId, ticketId, ticket: { requesterId: requester.id } }
+    });
+    if (!attachment) {
+      errorResponse(res, 404, 'ATTACHMENT_NOT_FOUND', 'Attachment not found.');
+      return;
+    }
+    res.status(200).json({ attachment: safeAttachment(attachment) });
+  } catch {
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to load attachment.');
+  }
+});
+
+app.get('/api/tickets/:ticketId/attachments/:attachmentId/download', async (req, res) => {
+  try {
+    const ticketId = parsePositiveId(req.params.ticketId);
+    const attachmentId = parsePositiveId(req.params.attachmentId);
+    if (ticketId === null || attachmentId === null) {
+      errorResponse(res, 400, 'INVALID_PATH_PARAMETER', 'Ticket and attachment IDs must be positive integers.');
+      return;
+    }
+    const requester = await getRequesterContext(req);
+    if (!requester) {
+      errorResponse(res, 400, 'REQUESTER_CONTEXT_INVALID', 'A valid active requester context is required.');
+      return;
+    }
+    const attachment = await prisma.attachment.findFirst({
+      where: { id: attachmentId, ticketId, ticket: { requesterId: requester.id } }
+    });
+    if (!attachment || attachment.removedAt !== null) {
+      errorResponse(res, 404, 'ATTACHMENT_NOT_FOUND', 'Attachment not found.');
+      return;
+    }
+    let content: Buffer;
+    try {
+      content = await readFile(attachment.filePath);
+    } catch {
+      errorResponse(res, 500, 'FILE_UNAVAILABLE', 'Attachment file is unavailable.');
+      return;
+    }
+    res.type(attachment.fileType).attachment(attachment.fileName).send(content);
+  } catch {
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to download attachment.');
+  }
+});
+
+app.delete('/api/tickets/:ticketId/attachments/:attachmentId', async (req, res) => {
+  try {
+    const ticketId = parsePositiveId(req.params.ticketId);
+    const attachmentId = parsePositiveId(req.params.attachmentId);
+    if (ticketId === null || attachmentId === null) {
+      errorResponse(res, 400, 'INVALID_PATH_PARAMETER', 'Ticket and attachment IDs must be positive integers.');
+      return;
+    }
+    const requester = await getRequesterContext(req);
+    if (!requester) {
+      errorResponse(res, 400, 'REQUESTER_CONTEXT_INVALID', 'A valid active requester context is required.');
+      return;
+    }
+    const reason = typeof req.body.removalReason === 'string' ? req.body.removalReason.trim() : '';
+    if (reason.length < 5 || reason.length > 250) {
+      errorResponse(res, 400, 'VALIDATION_ERROR', 'Request validation failed', { removalReason: 'Removal reason must be between 5 and 250 characters' });
+      return;
+    }
+    const attachment = await prisma.attachment.findUnique({
+      where: { id: attachmentId },
+      include: { ticket: { select: { requesterId: true, id: true } } }
+    });
+    if (!attachment || attachment.ticketId !== ticketId || attachment.ticket.requesterId !== requester.id) {
+      errorResponse(res, 404, 'ATTACHMENT_NOT_FOUND', 'Attachment not found.');
+      return;
+    }
+    if (attachment.removedAt !== null) {
+      if (attachment.removalReason === reason) {
+        res.status(200).json({ attachment: safeAttachment(attachment) });
+        return;
+      }
+      errorResponse(res, 409, 'ATTACHMENT_ALREADY_REMOVED', 'Attachment has already been removed.');
+      return;
+    }
+    const updated = await prisma.attachment.update({ where: { id: attachmentId }, data: { isRemoved: true, removedAt: new Date(), removalReason: reason } });
+    res.status(200).json({ attachment: safeAttachment(updated) });
+  } catch {
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to remove attachment.');
   }
 });
 

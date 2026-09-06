@@ -65,7 +65,8 @@ model Attachment {
   fileType      String
   filePath      String
   isRemoved     Boolean  @default(false)
-  removalReason String?
+  removedAt     DateTime?
+  removalReason String?  @db.VarChar(250)
   createdAt     DateTime @default(now())
   ticket        Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 }
