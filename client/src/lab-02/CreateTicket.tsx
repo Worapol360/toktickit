@@ -137,8 +137,27 @@ export function CreateTicket({ requesterId, categories, relatedSystems, onCancel
   }
 
   return (
-    <main aria-label="Create Ticket" style={{ minHeight: '100vh', background: '#F6FAF8', padding: '32px 16px' }}>
-      <form onSubmit={submit} noValidate aria-busy={busy} style={{ maxWidth: '720px', margin: '0 auto', background: '#FFFFFF', border: '1px solid #D7E2DC', borderRadius: '8px', padding: '32px' }}>
+    <main
+        aria-label="Create Ticket"
+        className="create-ticket-main"
+        style={{
+          minHeight: '100vh',
+          background: '#F6FAF8'
+        }}
+      >
+      <form
+          onSubmit={submit}
+          noValidate
+          aria-busy={busy}
+          className="create-ticket-form"
+          style={{
+            maxWidth: '720px',
+            margin: '0 auto',
+            background: '#FFFFFF',
+            border: '1px solid #D7E2DC',
+            borderRadius: '8px'
+          }}
+        >
         <h1>Create Ticket</h1>
         <p>* means required</p>
         {formError && <div role="alert" style={{ background: '#FDECEC', color: '#B42318', padding: '12px', marginBottom: '16px' }}>{formError}</div>}

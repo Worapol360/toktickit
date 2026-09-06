@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { RequesterSelectionScreen } from './lab-02/RequesterSelection';
 import { CreateTicket } from './lab-02/CreateTicket';
 import { RequesterTicketDetail } from './pages/RequesterTicketDetail';
+import { MyTickets } from './pages/MyTickets';
 
 type Requester = {
   id: number;
@@ -29,6 +30,87 @@ function getStoredRequesterId() {
   }
 
   return window.sessionStorage.getItem(SESSION_KEY) ?? '';
+}
+
+// --- Shared Green Zen layout: wraps every authenticated page ---
+function AppShell({
+  currentRoute,
+  selectedRequester,
+  onNavigate,
+  onChangeRequester,
+  children,
+}: {
+  currentRoute: string;
+  selectedRequester: Requester | null;
+  onNavigate: (route: string) => void;
+  onChangeRequester: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <main style={{ minHeight: '100vh', background: '#F6FAF8', color: '#17221C' }}>
+      <header
+        className="app-header"
+        style={{
+          background: '#006B3C',
+          color: '#FFFFFF',
+          padding: '16px 24px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
+        <div>
+          <strong>TokTickIT</strong>
+        </div>
+        <nav className="app-nav" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <button
+            type="button"
+            aria-current={currentRoute === '/' ? 'page' : undefined}
+            onClick={() => onNavigate('/')}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#FFFFFF',
+              padding: 0,
+              fontWeight: currentRoute === '/' ? 700 : 400,
+              textDecoration: currentRoute === '/' ? 'underline' : 'none',
+            }}
+          >
+            My Tickets
+          </button>
+          <button
+            type="button"
+            aria-current={currentRoute === '/create-ticket' ? 'page' : undefined}
+            onClick={() => onNavigate('/create-ticket')}
+            style={{
+              background: 'transparent',
+              border: '1px solid rgba(255,255,255,0.35)',
+              color: '#FFFFFF',
+              borderRadius: '6px',
+              padding: '8px 12px',
+              fontWeight: currentRoute === '/create-ticket' ? 700 : 400,
+            }}
+          >
+            Create Ticket
+          </button>
+        </nav>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span>{selectedRequester ? selectedRequester.name : 'No requester selected'}</span>
+          <button
+            type="button"
+            onClick={onChangeRequester}
+            style={{ background: '#FFFFFF', color: '#006B3C', border: 'none', borderRadius: '6px', padding: '8px 12px' }}
+          >
+            Change Requester
+          </button>
+        </div>
+      </header>
+
+      <section style={{ maxWidth: '1200px', margin: '32px auto', padding: '0 24px' }}>
+        {children}
+      </section>
+    </main>
+  );
 }
 
 export default function App() {
@@ -188,6 +270,7 @@ export default function App() {
     navigateTo('/select-requester');
   };
 
+  // Requester Selection screen: NO header/layout wraps this one.
   if (currentRoute === '/select-requester') {
     return (
       <RequesterSelectionScreen
@@ -202,8 +285,13 @@ export default function App() {
     );
   }
 
+  // Determine which page content to render inside the shared shell.
+  let pageContent: ReactNode;
+
+  const ticketDetailMatch = currentRoute.match(/^\/tickets\/(\d+)$/);
+
   if (currentRoute === '/create-ticket') {
-    return (
+    pageContent = (
       <CreateTicket
         requesterId={selectedRequesterId}
         categories={categories}
@@ -211,66 +299,44 @@ export default function App() {
         onCancel={() => navigateTo('/')}
       />
     );
-  }
-
-  const ticketDetailMatch = currentRoute.match(/^\/tickets\/(\d+)$/);
-  if (ticketDetailMatch) {
-    return (
+  } else if (ticketDetailMatch) {
+    pageContent = (
       <RequesterTicketDetail
         requesterId={selectedRequesterId}
         ticketId={Number(ticketDetailMatch[1])}
         onBack={() => navigateTo('/')}
       />
     );
+  } else {
+    // Default / unknown route: normalize to "/" and show My Tickets.
+    if (currentRoute !== '/') {
+      window.history.replaceState({}, '', '/');
+      pageContent = null;
+    } else {
+      pageContent = (
+        <MyTickets
+          requesterId={selectedRequesterId}
+          onCreateTicket={() => navigateTo('/create-ticket')}
+          onViewTicket={(ticketId) => navigateTo(`/tickets/${ticketId}`)}
+        />
+      );
+    }
   }
 
   return (
-    <main style={{ minHeight: '100vh', background: '#F6FAF8', color: '#17221C', padding: '24px' }}>
-      <header style={{ background: '#006B3C', color: '#FFFFFF', padding: '16px 24px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <strong>TikTockIT</strong>
-        </div>
-        <nav style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <span aria-current="page">My Tickets</span>
-          <button type="button" onClick={() => navigateTo('/create-ticket')} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.35)', color: '#FFFFFF', borderRadius: '6px', padding: '8px 12px' }}>
-            Create Ticket
-          </button>
-        </nav>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span>{selectedRequester ? selectedRequester.name : 'No requester selected'}</span>
-          <button type="button" onClick={goToRequesterSelection} style={{ background: '#FFFFFF', color: '#006B3C', border: 'none', borderRadius: '6px', padding: '8px 12px' }}>
-            Change Requester
-          </button>
-        </div>
-      </header>
-
-      <section style={{ maxWidth: '1200px', margin: '32px auto', background: '#FFFFFF', borderRadius: '8px', padding: '24px', border: '1px solid #D7E2DC' }}>
-        <div className="text-center mb-4">
-          <h1 className="display-6 fw-semibold mb-2">TokTickIT IT Service Desk</h1>
-          <p className="text-muted mb-0">Service categories loaded from PostgreSQL via Prisma</p>
-        </div>
-
-        <div className="d-flex justify-content-center mb-4">
-          <button type="button" className="btn btn-primary px-4" onClick={() => window.location.reload()}>
-            Check System
-          </button>
-        </div>
-
-        {categoriesLoading ? (
-          <p className="text-center text-muted mb-0" role="status">Loading categories...</p>
-        ) : categoriesError ? (
-          <p className="text-center text-danger mb-0" role="alert">{categoriesError}</p>
-        ) : (
-          <ul className="list-group list-group-flush">
-            {categories.map((category) => (
-              <li key={category.id} className="list-group-item d-flex justify-content-between align-items-center px-0">
-                <span>{category.name}</span>
-                <span className="badge text-bg-secondary rounded-pill">ID {category.id}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </main>
+    <AppShell
+      currentRoute={currentRoute}
+      selectedRequester={selectedRequester}
+      onNavigate={navigateTo}
+      onChangeRequester={goToRequesterSelection}
+    >
+      {currentRoute === '/create-ticket' && relatedSystemsError && (
+        <p className="text-danger" role="alert">{relatedSystemsError}</p>
+      )}
+      {currentRoute === '/create-ticket' && categoriesError && (
+        <p className="text-danger" role="alert">{categoriesError}</p>
+      )}
+      {pageContent}
+    </AppShell>
   );
 }

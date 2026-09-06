@@ -35,6 +35,7 @@ export function MyTickets({ requesterId, onCreateTicket, onViewTicket }: MyTicke
   const [pagination, setPagination] = useState(defaultPagination);
   const [sort, setSort] = useState(defaultSort);
   const [search, setSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [status, setStatus] = useState('');
   const [priority, setPriority] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -50,11 +51,11 @@ export function MyTickets({ requesterId, onCreateTicket, onViewTicket }: MyTicke
     setCategories(body.categories.filter((category) => category.isActive));
   };
 
-  const loadTickets = async (nextPage = page) => {
+  const loadTickets = async (nextPage: number) => {
     setLoading(true);
     setError('');
     const params = new URLSearchParams();
-    if (search.trim()) params.set('search', search.trim());
+    if (appliedSearch.trim()) params.set('search', appliedSearch.trim());
     if (status) params.set('status', status);
     if (priority) params.set('priority', priority);
     if (categoryId) params.set('categoryId', categoryId);
@@ -80,45 +81,59 @@ export function MyTickets({ requesterId, onCreateTicket, onViewTicket }: MyTicke
 
   useEffect(() => {
     setSearch('');
+    setAppliedSearch('');
     setStatus('');
     setPriority('');
     setCategoryId('');
-    setPage(1);
-    setPageSize(10);
     setSort(defaultSort);
+    setPageSize(10);
+    setPage(1);
     setTickets([]);
-    void Promise.all([loadTickets(1), loadCategories()]).catch(() => undefined);
-    // Requester changes intentionally reset all list state before reloading page one.
+
+    void loadCategories().catch(() => setError('Unable to load categories.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requesterId]);
 
-  const hasActiveFilters = Boolean(search.trim() || status || priority || categoryId);
+  useEffect(() => {
+    void loadTickets(page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    requesterId,
+    appliedSearch,
+    status,
+    priority,
+    categoryId,
+    sort.sortBy,
+    sort.sortOrder,
+    page,
+    pageSize
+  ]);
+
+  const hasActiveFilters = Boolean(appliedSearch.trim() || status || priority || categoryId);
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setAppliedSearch(search);
     setPage(1);
-    void loadTickets(1);
   };
 
   const updateFilter = (setter: (value: string) => void, value: string) => {
     setter(value);
     setPage(1);
-    window.setTimeout(() => void loadTickets(1), 0);
   };
 
   const clearFilters = () => {
     setSearch('');
+    setAppliedSearch('');
     setStatus('');
     setPriority('');
     setCategoryId('');
-    setPage(1);
     setSort(defaultSort);
-    void loadTickets(1);
+    setPage(1);
   };
 
   const changePage = (nextPage: number) => {
     setPage(nextPage);
-    void loadTickets(nextPage);
   };
 
   const isEmpty = !loading && !error && pagination.totalItems === 0 && !hasActiveFilters;
@@ -132,9 +147,18 @@ export function MyTickets({ requesterId, onCreateTicket, onViewTicket }: MyTicke
         <label>Category<select aria-label="Category filter" value={categoryId} onChange={(event) => updateFilter(setCategoryId, event.target.value)}><option value="">All categories</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
         <label>Requested Priority<select aria-label="Requested Priority filter" value={priority} onChange={(event) => updateFilter(setPriority, event.target.value)}><option value="">All priorities</option>{['Low', 'Medium', 'High', 'Urgent'].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
         <label>Current Status<select aria-label="Current Status filter" value={status} onChange={(event) => updateFilter(setStatus, event.target.value)}><option value="">All statuses</option><option value="New">New</option></select></label>
-        <label>Sort by<select aria-label="Sort by" value={sort.sortBy} onChange={(event) => { setSort({ ...sort, sortBy: event.target.value }); setPage(1); void loadTickets(1); }}><option value="createdAt">Created Date</option><option value="ticketNumber">Ticket Number</option><option value="summary">Summary</option><option value="requestedPriority">Requested Priority</option><option value="status">Status</option></select></label>
-        <label>Direction<select aria-label="Sort direction" value={sort.sortOrder} onChange={(event) => { setSort({ ...sort, sortOrder: event.target.value as 'asc' | 'desc' }); setPage(1); void loadTickets(1); }}><option value="desc">Descending</option><option value="asc">Ascending</option></select></label>
-        <label>Page size<select aria-label="Page size" value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); void loadTickets(1); }}><option value="10">10</option><option value="25">25</option><option value="50">50</option></select></label>
+        <label>Sort by<select aria-label="Sort by" value={sort.sortBy} onChange={(event) => {
+  setSort({ ...sort, sortBy: event.target.value });
+  setPage(1);
+}}><option value="createdAt">Created Date</option><option value="ticketNumber">Ticket Number</option><option value="summary">Summary</option><option value="requestedPriority">Requested Priority</option><option value="status">Status</option></select></label>
+        <label>Direction<select aria-label="Sort direction" value={sort.sortOrder} onChange={(event) => {
+  setSort({ ...sort, sortOrder: event.target.value as 'asc' | 'desc' });
+  setPage(1);
+}}><option value="desc">Descending</option><option value="asc">Ascending</option></select></label>
+        <label>Page size<select aria-label="Page size" value={pageSize} onChange={(event) => {
+  setPageSize(Number(event.target.value));
+  setPage(1);
+}}><option value="10">10</option><option value="25">25</option><option value="50">50</option></select></label>
         <button type="submit" className="secondary-action">Search</button>{!isNoResults && <button type="button" className="secondary-action" onClick={clearFilters} disabled={!hasActiveFilters && sort.sortBy === 'createdAt' && sort.sortOrder === 'desc'}>Clear Filters</button>}
       </form>
       <div className="ticket-list-region" aria-live="polite" aria-busy={loading}>
