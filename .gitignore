@@ -43,3 +43,5 @@ softEng_lab1.txt
 *.txt
 
 storage/
+# Runtime attachment storage
+server/storage/
