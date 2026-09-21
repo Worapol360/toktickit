@@ -108,7 +108,7 @@ export function CreateTicket({ requesterId, categories, relatedSystems, onCancel
     try {
       const response = await fetch('/api/tickets', {
         method: 'POST',
-        headers: { 'X-Requester-Id': requesterId },
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
         body: payload
       });
       const body = await response.json() as { ticket?: { ticketNumber: string; status: string }; error?: { message?: string } };

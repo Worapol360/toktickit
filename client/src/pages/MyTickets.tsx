@@ -65,7 +65,7 @@ export function MyTickets({ requesterId, onCreateTicket, onViewTicket }: MyTicke
     params.set('pageSize', String(pageSize));
 
     try {
-      const response = await fetch(`/api/tickets?${params.toString()}`, { headers: { 'X-Requester-Id': requesterId } });
+      const response = await fetch(`/api/tickets?${params.toString()}`, { credentials: 'same-origin' });
       const body = await response.json() as { tickets?: Ticket[]; pagination?: Pagination; sort?: Sort; error?: { message?: string } };
       if (!response.ok || !body.pagination || !Array.isArray(body.tickets)) throw new Error(body.error?.message ?? 'Unable to load tickets.');
       setTickets(body.tickets);

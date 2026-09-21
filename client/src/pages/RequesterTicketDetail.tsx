@@ -32,7 +32,7 @@ export function RequesterTicketDetail({ requesterId, ticketId, onBack }: Request
     setError('');
     setNotFound(false);
     try {
-      const response = await fetch(`/api/tickets/${ticketId}`, { headers: { 'X-Requester-Id': requesterId } });
+      const response = await fetch(`/api/tickets/${ticketId}`, { credentials: 'same-origin' });
       if (response.status === 404) {
         setNotFound(true);
         return;

@@ -15,17 +15,44 @@ model Category {
   tickets   Ticket[]
 }
 
-model RequesterUser {
-  id         Int      @id @default(autoincrement())
-  name       String
-  email      String   @unique
-  department String
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  tickets    Ticket[]
+enum UserRole {
+  REQUESTER
+  IT_STAFF
+  ADMINISTRATOR
+}
 
+model User {
+  id                 Int       @id @default(autoincrement())
+  name               String
+  email              String
+  // Lowercase storage provides a portable case-insensitive unique email index without requiring citext.
+  emailNormalized    String    @unique
+  passwordHash       String
+  role               UserRole  @default(REQUESTER)
+  department         String
+  isActive           Boolean   @default(true)
+  mustChangePassword Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  tickets            Ticket[]  @relation("RequesterTickets")
+  ownedTickets       Ticket[]  @relation("TicketOwners")
+  sessions           Session[]
+
+  @@index([role])
   @@map("requester_user")
+}
+
+model Session {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  tokenHash String    @unique
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tokenHash])
+  @@index([userId])
 }
 
 model RelatedSystem {
@@ -47,7 +74,9 @@ model Ticket {
   requesterId      Int
   categoryId       Int
   relatedSystemId  Int
-  requester        RequesterUser   @relation(fields: [requesterId], references: [id])
+  requester        User            @relation("RequesterTickets", fields: [requesterId], references: [id])
+  ownerId          Int?
+  owner            User?           @relation("TicketOwners", fields: [ownerId], references: [id])
   category         Category        @relation(fields: [categoryId], references: [id])
   relatedSystem    RelatedSystem   @relation(fields: [relatedSystemId], references: [id])
   attachments      Attachment[]
