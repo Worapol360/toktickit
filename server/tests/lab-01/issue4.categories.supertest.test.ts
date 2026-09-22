@@ -1,13 +1,15 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { findManyMock, connectMock } = vi.hoisted(() => ({
+const { findManyMock, sessionFindUniqueMock, connectMock } = vi.hoisted(() => ({
   findManyMock: vi.fn(),
+  sessionFindUniqueMock: vi.fn(),
   connectMock: vi.fn().mockResolvedValue(undefined)
 }));
 
 vi.mock('../../src/prisma.js', () => ({
   default: {
     $connect: connectMock,
+    session: { findUnique: sessionFindUniqueMock },
     category: {
       findMany: findManyMock
     }
@@ -17,8 +19,30 @@ vi.mock('../../src/prisma.js', () => ({
 import request from 'supertest';
 import { app } from '../../src/server.js';
 
+const authCookie = 'ttik_session=valid-requester-token';
+const activeSession = {
+  id: 1,
+  userId: 1,
+  tokenHash: 'test-token-hash',
+  expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000),
+  revokedAt: null,
+  user: {
+    id: 1,
+    name: 'Aiko Tanaka',
+    email: 'aiko@example.com',
+    role: 'REQUESTER',
+    isActive: true,
+    mustChangePassword: false
+  }
+};
+
+beforeEach(() => {
+  sessionFindUniqueMock.mockResolvedValue(activeSession);
+});
+
 afterEach(() => {
   findManyMock.mockReset();
+  sessionFindUniqueMock.mockReset();
 });
 
 describe('Issue 4 categories API', () => {
@@ -30,7 +54,9 @@ describe('Issue 4 categories API', () => {
       { id: 4, code: 'NETWORK', name: 'Network', isActive: true }
     ]);
 
-    const response = await request(app).get('/api/categories');
+    const response = await request(app)
+      .get('/api/categories')
+      .set('Cookie', authCookie);
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
@@ -53,5 +79,13 @@ describe('Issue 4 categories API', () => {
       },
       orderBy: [{ name: 'asc' }, { id: 'asc' }]
     });
+  });
+
+  it('rejects unauthenticated access with 401 UNAUTHENTICATED', async () => {
+    const response = await request(app).get('/api/categories');
+
+    expect(response.status).toBe(401);
+    expect(response.body.error.code).toBe('UNAUTHENTICATED');
+    expect(findManyMock).not.toHaveBeenCalled();
   });
 });

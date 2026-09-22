@@ -54,7 +54,7 @@ export function AttachmentSection({ ticketId, requesterId, attachments, onChange
     setBusy(true);
     setError('');
     try {
-      const response = await fetch(`/api/tickets/${ticketId}/attachments`, { method: 'POST', headers: { 'X-Requester-Id': requesterId }, body });
+      const response = await fetch(`/api/tickets/${ticketId}/attachments`, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body });
       if (!response.ok) throw new Error('Unable to upload attachment.');
       setPendingFiles((current) => current.map((item) => item.status === 'uploading' ? { ...item, status: 'ready' } : item));
       onChanged();
@@ -74,7 +74,7 @@ export function AttachmentSection({ ticketId, requesterId, attachments, onChange
     try {
       const response = await fetch(`/api/tickets/${ticketId}/attachments/${selectedAttachment.id}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json', 'X-Requester-Id': requesterId },
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         body: JSON.stringify({ removalReason: reason.trim() })
       });
       if (!response.ok) throw new Error('Unable to remove attachment.');

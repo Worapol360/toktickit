@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { requesterFindUniqueMock, ticketFindFirstMock, attachmentFindFirstMock, attachmentFindUniqueMock, attachmentUpdateMock, transactionMock, connectMock } = vi.hoisted(() => ({
-  requesterFindUniqueMock: vi.fn(),
+const { sessionFindUniqueMock, ticketFindFirstMock, attachmentFindFirstMock, attachmentFindUniqueMock, attachmentUpdateMock, transactionMock, connectMock } = vi.hoisted(() => ({
+  sessionFindUniqueMock: vi.fn(),
   ticketFindFirstMock: vi.fn(),
   attachmentFindFirstMock: vi.fn(),
   attachmentFindUniqueMock: vi.fn(),
@@ -13,7 +13,7 @@ const { requesterFindUniqueMock, ticketFindFirstMock, attachmentFindFirstMock, a
 vi.mock('../../src/prisma.js', () => ({
   default: {
     $connect: connectMock,
-    requesterUser: { findUnique: requesterFindUniqueMock },
+    session: { findUnique: sessionFindUniqueMock },
     ticket: { findFirst: ticketFindFirstMock },
     attachment: { findFirst: attachmentFindFirstMock, findUnique: attachmentFindUniqueMock, update: attachmentUpdateMock },
     $transaction: transactionMock
@@ -23,7 +23,23 @@ vi.mock('../../src/prisma.js', () => ({
 import request from 'supertest';
 import { app } from '../../src/server.js';
 
-const requester = { id: 1, isActive: true };
+const authCookie = 'ttik_session=valid-requester-token';
+const activeSession = {
+  id: 1,
+  userId: 1,
+  tokenHash: 'test-token-hash',
+  expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000),
+  revokedAt: null,
+  user: {
+    id: 1,
+    name: 'Aiko Tanaka',
+    email: 'aiko@example.com',
+    role: 'REQUESTER',
+    isActive: true,
+    mustChangePassword: false
+  }
+};
+
 const attachment = {
   id: 41,
   ticketId: 11,
@@ -36,14 +52,19 @@ const attachment = {
   createdAt: new Date('2026-09-05T12:00:00.000Z')
 };
 
+beforeEach(() => {
+  sessionFindUniqueMock.mockResolvedValue(activeSession);
+});
+
 afterEach(() => vi.clearAllMocks());
 
 describe('Issue 5 attachment API', () => {
   it('API-15 returns owned attachment metadata without filePath', async () => {
-    requesterFindUniqueMock.mockResolvedValue(requester);
     attachmentFindFirstMock.mockResolvedValue({ ...attachment, ticket: { requesterId: 1 } });
 
-    const response = await request(app).get('/api/tickets/11/attachments/41').set('X-Requester-Id', '1');
+    const response = await request(app)
+      .get('/api/tickets/11/attachments/41')
+      .set('Cookie', authCookie);
 
     expect(response.status).toBe(200);
     expect(response.body.attachment).toMatchObject({ id: 41, fileName: 'screen.png', isRemoved: false });
@@ -51,12 +72,12 @@ describe('Issue 5 attachment API', () => {
   });
 
   it('API-14 rejects an upload batch that would exceed five active attachments', async () => {
-    requesterFindUniqueMock.mockResolvedValue(requester);
     ticketFindFirstMock.mockResolvedValue({ id: 11, requesterId: 1, attachments: [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }] });
 
     const response = await request(app)
       .post('/api/tickets/11/attachments')
-      .set('X-Requester-Id', '1')
+      .set('Cookie', authCookie)
+      .set('X-Requested-With', 'XMLHttpRequest')
       .attach('attachments', Buffer.from('one'), 'one.png')
       .attach('attachments', Buffer.from('two'), 'two.png');
 
@@ -65,24 +86,32 @@ describe('Issue 5 attachment API', () => {
   });
 
   it('API-16 returns 404 for removed attachment downloads', async () => {
-    requesterFindUniqueMock.mockResolvedValue(requester);
     attachmentFindFirstMock.mockResolvedValue({ ...attachment, isRemoved: true, ticket: { requesterId: 1 } });
 
-    const response = await request(app).get('/api/tickets/11/attachments/41/download').set('X-Requester-Id', '1');
+    const response = await request(app)
+      .get('/api/tickets/11/attachments/41/download')
+      .set('Cookie', authCookie);
 
     expect(response.status).toBe(404);
     expect(response.body.error.code).toBe('ATTACHMENT_NOT_FOUND');
   });
 
   it('API-17/API-18 validates removal reasons and supports same-reason idempotency', async () => {
-    requesterFindUniqueMock.mockResolvedValue(requester);
     attachmentFindUniqueMock.mockResolvedValue({ ...attachment, isRemoved: true, removalReason: 'Wrong version', ticket: { requesterId: 1 } });
 
-    const invalid = await request(app).delete('/api/tickets/11/attachments/41').set('X-Requester-Id', '1').send({ removalReason: 'bad' });
+    const invalid = await request(app)
+      .delete('/api/tickets/11/attachments/41')
+      .set('Cookie', authCookie)
+      .set('X-Requested-With', 'XMLHttpRequest')
+      .send({ removalReason: 'bad' });
     expect(invalid.status).toBe(400);
     expect(invalid.body.error.code).toBe('VALIDATION_ERROR');
 
-    const repeated = await request(app).delete('/api/tickets/11/attachments/41').set('X-Requester-Id', '1').send({ removalReason: 'Wrong version' });
+    const repeated = await request(app)
+      .delete('/api/tickets/11/attachments/41')
+      .set('Cookie', authCookie)
+      .set('X-Requested-With', 'XMLHttpRequest')
+      .send({ removalReason: 'Wrong version' });
     expect(repeated.status).toBe(200);
     expect(repeated.body.attachment.isRemoved).toBe(true);
   });

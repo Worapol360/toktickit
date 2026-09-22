@@ -6,11 +6,26 @@ import { randomUUID } from 'node:crypto';
 import multer from 'multer';
 import type { Prisma } from '@prisma/client';
 import prisma from './prisma.js';
+import {
+  clearSessionCookie,
+  csrfGuard,
+  errorResponse,
+  hashPassword,
+  login,
+  requireAuth,
+  requirePasswordChangeComplete,
+  requireRole,
+  safeUser,
+  setSessionCookie,
+  validatePassword,
+  type AuthenticatedRequest
+} from './auth.js';
 
 export const app = express();
 const port = Number(process.env.PORT) || 3001;
 
 app.use(express.json());
+app.use(csrfGuard);
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -27,19 +42,6 @@ type UploadedFile = {
   size: number;
   buffer: Buffer;
 };
-
-function errorResponse(res: express.Response, status: number, code: string, message: string, fields?: Record<string, string>) {
-  res.status(status).json({ error: { code, message, ...(fields ? { fields } : {}) } });
-}
-
-async function getRequesterContext(req: express.Request) {
-  const rawId = req.header('X-Requester-Id');
-  if (!rawId || !/^\d+$/.test(rawId)) return null;
-  const id = Number(rawId);
-  if (!Number.isSafeInteger(id) || id < 1) return null;
-  const requester = await prisma.requesterUser.findUnique({ where: { id } });
-  return requester?.isActive ? requester : null;
-}
 
 function ticketNumber() {
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -85,6 +87,93 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+app.post('/api/auth/login', async (req, res) => {
+  const email = typeof req.body.email === 'string' ? req.body.email.trim() : '';
+  const password = typeof req.body.password === 'string' ? req.body.password : '';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !password) {
+    errorResponse(res, 400, 'VALIDATION_ERROR', 'Request validation failed', {
+      email: 'Enter a valid email address',
+      password: 'Password is required'
+    });
+    return;
+  }
+  try {
+    const result = await login(email, password);
+    if (result.kind === 'invalid') {
+      errorResponse(res, 401, 'INVALID_CREDENTIALS', 'Incorrect email or password.');
+      return;
+    }
+    if (result.kind === 'inactive') {
+      errorResponse(res, 403, 'ACCOUNT_INACTIVE', 'This account is inactive. Contact an Administrator.');
+      return;
+    }
+    setSessionCookie(res, result.rawToken);
+    res.status(200).json({ user: result.user });
+  } catch {
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to sign in.');
+  }
+});
+
+app.post('/api/auth/logout', requireAuth, async (req, res) => {
+  try {
+    const sessionId = (req as AuthenticatedRequest).sessionId;
+    if (sessionId) await prisma.session.update({ where: { id: sessionId }, data: { revokedAt: new Date() } });
+    clearSessionCookie(res);
+    res.status(204).send();
+  } catch {
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to sign out.');
+  }
+});
+
+app.get('/api/auth/me', requireAuth, (req, res) => {
+  res.status(200).json(safeUser((req as AuthenticatedRequest).user!));
+});
+
+app.post('/api/auth/change-password', requireAuth, async (req, res) => {
+  const currentPassword = typeof req.body.currentPassword === 'string' ? req.body.currentPassword : '';
+  const newPassword = typeof req.body.newPassword === 'string' ? req.body.newPassword : '';
+  const confirmNewPassword = typeof req.body.confirmNewPassword === 'string' ? req.body.confirmNewPassword : '';
+  if (!currentPassword || !validatePassword(newPassword)) {
+    errorResponse(res, 400, 'VALIDATION_ERROR', 'Request validation failed');
+    return;
+  }
+  if (newPassword !== confirmNewPassword) {
+    errorResponse(res, 400, 'PASSWORD_MISMATCH', 'New passwords must match.');
+    return;
+  }
+  try {
+    const user = await prisma.user.findUnique({ where: { id: (req as AuthenticatedRequest).user!.id } });
+    if (!user) {
+      errorResponse(res, 401, 'UNAUTHENTICATED', 'Authentication is required.');
+      return;
+    }
+    const bcrypt = await import('bcryptjs');
+    if (!(await bcrypt.compare(currentPassword, user.passwordHash))) {
+      errorResponse(res, 401, 'CURRENT_PASSWORD_INCORRECT', 'Current password is incorrect.');
+      return;
+    }
+    if (await bcrypt.compare(newPassword, user.passwordHash)) {
+      errorResponse(res, 400, 'SAME_AS_CURRENT', 'New password must differ from the current password.');
+      return;
+    }
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: await hashPassword(newPassword), mustChangePassword: false }
+    });
+    res.status(200).json({ user: safeUser(updated) });
+  } catch {
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to change password.');
+  }
+});
+
+app.use('/api/categories', requireAuth, requirePasswordChangeComplete);
+app.use('/api/related-systems', requireAuth, requirePasswordChangeComplete);
+app.use('/api/tickets', requireAuth, requirePasswordChangeComplete, requireRole('REQUESTER'));
+
+function getRequesterContext(req: AuthenticatedRequest) {
+  return req.user?.role === 'REQUESTER' ? req.user : null;
+}
+
 app.get('/api/categories', async (_req, res) => {
   const categories = await prisma.category.findMany({
     where: {
@@ -100,34 +189,6 @@ app.get('/api/categories', async (_req, res) => {
   });
 
   res.status(200).json({ categories });
-});
-
-app.get('/api/requesters', async (_req, res) => {
-  try {
-    const requesters = await prisma.requesterUser.findMany({
-      where: {
-        isActive: true
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        department: true,
-        isActive: true
-      },
-      orderBy: [{ name: 'asc' }, { id: 'asc' }]
-    });
-
-    res.status(200).json({ requesters });
-  } catch (error) {
-    console.error(`Failed to load requesters: ${error instanceof Error ? error.message : String(error)}`);
-    res.status(500).json({
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: 'Unable to load requesters.'
-      }
-    });
-  }
 });
 
 app.get('/api/related-systems', async (_req, res) => {

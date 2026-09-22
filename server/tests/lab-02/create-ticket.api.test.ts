@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { requesterFindUniqueMock, categoryFindUniqueMock, relatedSystemFindUniqueMock, relatedSystemFindManyMock, ticketCreateMock, ticketFindFirstMock, transactionMock, connectMock } = vi.hoisted(() => ({
-  requesterFindUniqueMock: vi.fn(),
+const { sessionFindUniqueMock, categoryFindUniqueMock, relatedSystemFindUniqueMock, relatedSystemFindManyMock, ticketCreateMock, ticketFindFirstMock, transactionMock, connectMock } = vi.hoisted(() => ({
+  sessionFindUniqueMock: vi.fn(),
   categoryFindUniqueMock: vi.fn(),
   relatedSystemFindUniqueMock: vi.fn(),
   relatedSystemFindManyMock: vi.fn(),
@@ -14,7 +14,7 @@ const { requesterFindUniqueMock, categoryFindUniqueMock, relatedSystemFindUnique
 vi.mock('../../src/prisma.js', () => ({
   default: {
     $connect: connectMock,
-    requesterUser: { findUnique: requesterFindUniqueMock },
+    session: { findUnique: sessionFindUniqueMock },
     category: { findUnique: categoryFindUniqueMock },
     relatedSystem: { findUnique: relatedSystemFindUniqueMock, findMany: relatedSystemFindManyMock },
     ticket: { create: ticketCreateMock, findFirst: ticketFindFirstMock },
@@ -25,6 +25,23 @@ vi.mock('../../src/prisma.js', () => ({
 import request from 'supertest';
 import { app } from '../../src/server.js';
 
+const authCookie = 'ttik_session=valid-requester-token';
+const activeSession = {
+  id: 1,
+  userId: 1,
+  tokenHash: 'test-token-hash',
+  expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000),
+  revokedAt: null,
+  user: {
+    id: 1,
+    name: 'Aiko Tanaka',
+    email: 'aiko@example.com',
+    role: 'REQUESTER',
+    isActive: true,
+    mustChangePassword: false
+  }
+};
+
 const validBody = {
   summary: '  Cannot access shared drive  ',
   description: '  The Finance shared drive has been unavailable since this morning.  ',
@@ -33,16 +50,18 @@ const validBody = {
   relatedSystemId: 1
 };
 
-const activeRequester = { id: 1, name: 'Aiko Tanaka', email: 'aiko@example.com', department: 'Finance', isActive: true };
 const activeCategory = { id: 1, name: 'Hardware', code: 'HARDWARE', isActive: true };
 const activeRelatedSystem = { id: 1, name: 'File Services', code: 'FILE_SERVICES', isActive: true };
+
+beforeEach(() => {
+  sessionFindUniqueMock.mockResolvedValue(activeSession);
+});
 
 afterEach(() => {
   vi.clearAllMocks();
 });
 
 function arrangeValidCreation() {
-  requesterFindUniqueMock.mockResolvedValue(activeRequester);
   categoryFindUniqueMock.mockResolvedValue(activeCategory);
   relatedSystemFindUniqueMock.mockResolvedValue(activeRelatedSystem);
   ticketFindFirstMock.mockResolvedValue(null);
@@ -69,7 +88,9 @@ describe('Issue 3 Create Ticket API', () => {
   it('API-03 returns active related systems in stable order', async () => {
     relatedSystemFindManyMock.mockResolvedValue([activeRelatedSystem]);
 
-    const response = await request(app).get('/api/related-systems');
+    const response = await request(app)
+      .get('/api/related-systems')
+      .set('Cookie', authCookie);
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ relatedSystems: [activeRelatedSystem] });
@@ -80,7 +101,8 @@ describe('Issue 3 Create Ticket API', () => {
 
     const response = await request(app)
       .post('/api/tickets')
-      .set('X-Requester-Id', '1')
+      .set('Cookie', authCookie)
+      .set('X-Requested-With', 'XMLHttpRequest')
       .send(validBody);
 
     expect(response.status).toBe(201);
@@ -91,23 +113,43 @@ describe('Issue 3 Create Ticket API', () => {
   });
 
   it('API-02 rejects missing, malformed, and inactive requester context', async () => {
-    requesterFindUniqueMock.mockResolvedValue(null);
+    const missingCookie = await request(app)
+      .post('/api/tickets')
+      .set('X-Requested-With', 'XMLHttpRequest')
+      .send(validBody);
+    expect(missingCookie.status).toBe(401);
+    expect(missingCookie.body.error.code).toBe('UNAUTHENTICATED');
 
-    for (const requesterId of [undefined, 'not-a-number', '99']) {
-      const requestBuilder = request(app).post('/api/tickets').send(validBody);
-      if (requesterId) requestBuilder.set('X-Requester-Id', requesterId);
-      const response = await requestBuilder;
-      expect(response.status).toBe(400);
-      expect(response.body.error.code).toBe('REQUESTER_CONTEXT_INVALID');
-    }
+    sessionFindUniqueMock.mockResolvedValueOnce({
+      ...activeSession,
+      user: { ...activeSession.user, isActive: false }
+    });
+    const inactive = await request(app)
+      .post('/api/tickets')
+      .set('Cookie', 'ttik_session=inactive-token')
+      .set('X-Requested-With', 'XMLHttpRequest')
+      .send(validBody);
+    expect(inactive.status).toBe(401);
+    expect(inactive.body.error.code).toBe('UNAUTHENTICATED');
+
+    sessionFindUniqueMock.mockResolvedValueOnce({
+      ...activeSession,
+      revokedAt: new Date()
+    });
+    const revoked = await request(app)
+      .post('/api/tickets')
+      .set('Cookie', 'ttik_session=revoked-token')
+      .set('X-Requested-With', 'XMLHttpRequest')
+      .send(validBody);
+    expect(revoked.status).toBe(401);
+    expect(revoked.body.error.code).toBe('UNAUTHENTICATED');
   });
 
   it('API-05 returns field errors for invalid ticket metadata', async () => {
-    requesterFindUniqueMock.mockResolvedValue(activeRequester);
-
     const response = await request(app)
       .post('/api/tickets')
-      .set('X-Requester-Id', '1')
+      .set('Cookie', authCookie)
+      .set('X-Requested-With', 'XMLHttpRequest')
       .send({ summary: 'bad', description: 'short', requestedPriority: 'Unknown', categoryId: 'x' });
 
     expect(response.status).toBe(400);
@@ -122,12 +164,12 @@ describe('Issue 3 Create Ticket API', () => {
   });
 
   it('API-08 rejects an identical recent submission without creating another ticket', async () => {
-    requesterFindUniqueMock.mockResolvedValue(activeRequester);
     ticketFindFirstMock.mockResolvedValue({ id: 101 });
 
     const response = await request(app)
       .post('/api/tickets')
-      .set('X-Requester-Id', '1')
+      .set('Cookie', authCookie)
+      .set('X-Requested-With', 'XMLHttpRequest')
       .send(validBody);
 
     expect(response.status).toBe(409);
@@ -140,7 +182,8 @@ describe('Issue 3 Create Ticket API', () => {
 
     const unsupported = await request(app)
       .post('/api/tickets')
-      .set('X-Requester-Id', '1')
+      .set('Cookie', authCookie)
+      .set('X-Requested-With', 'XMLHttpRequest')
       .field(validBody)
       .attach('attachments', Buffer.from('not an executable'), 'malware.exe');
 
@@ -150,7 +193,8 @@ describe('Issue 3 Create Ticket API', () => {
 
     const oversized = await request(app)
       .post('/api/tickets')
-      .set('X-Requester-Id', '1')
+      .set('Cookie', authCookie)
+      .set('X-Requested-With', 'XMLHttpRequest')
       .field(validBody)
       .attach('attachments', Buffer.alloc(5 * 1024 * 1024 + 1), 'large.pdf');
 
@@ -159,7 +203,8 @@ describe('Issue 3 Create Ticket API', () => {
 
     const tooMany = request(app)
       .post('/api/tickets')
-      .set('X-Requester-Id', '1')
+      .set('Cookie', authCookie)
+      .set('X-Requested-With', 'XMLHttpRequest')
       .field(validBody);
     for (let index = 0; index < 6; index += 1) {
       tooMany.attach('attachments', Buffer.from(`valid image ${index}`), `screen-${index}.png`);
@@ -176,7 +221,8 @@ describe('Issue 3 Create Ticket API', () => {
 
     const response = await request(app)
       .post('/api/tickets')
-      .set('X-Requester-Id', '1')
+      .set('Cookie', authCookie)
+      .set('X-Requested-With', 'XMLHttpRequest')
       .field(validBody)
       .attach('attachments', Buffer.from('valid image'), 'screen.png');
 

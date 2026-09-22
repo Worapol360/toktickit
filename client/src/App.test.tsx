@@ -4,12 +4,11 @@ import App from './App';
 
 describe('App shell', () => {
   beforeEach(() => {
-    window.sessionStorage.setItem('toktickit-selected-requester-id', '1');
     vi.stubGlobal('fetch', vi.fn((url: string) => {
-      if (url.includes('/api/requesters')) {
+      if (url.includes('/api/auth/me')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ requesters: [{ id: 1, name: 'Aiko Tanaka', email: 'a@x.com', department: 'IT', isActive: true }] }),
+          json: () => Promise.resolve({ user: { id: 1, name: 'Aiko Tanaka', email: 'aiko@example.com', role: 'REQUESTER', mustChangePassword: false } }),
         } as Response);
       }
       if (url.includes('/api/tickets')) {
@@ -24,7 +23,7 @@ describe('App shell', () => {
 
   it('renders the shared header and My Tickets by default', async () => {
     render(<App />);
-    expect(screen.getByText('TokTickIT')).toBeTruthy();
+    expect(await screen.findByText('TokTickIT')).toBeTruthy();
     expect(await screen.findByRole('heading', { name: 'My Tickets' })).toBeTruthy();
   });
 });
