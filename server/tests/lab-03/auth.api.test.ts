@@ -7,7 +7,22 @@ const localPasswordHash = '$2b$12$MvQuSTNtpiuJmfaKc7j0Nu0FipBQuY31F6ojkIMWw2OMTZ
 
 beforeEach(async () => {
   await prisma.session.deleteMany();
-  await prisma.user.updateMany({ data: { passwordHash: localPasswordHash, mustChangePassword: true } });
+
+  await prisma.user.updateMany({
+    where: {
+      email: {
+        in: [
+          'aiko@example.com',
+          'daniel@example.com',
+          'inactive@example.com',
+        ],
+      },
+    },
+    data: {
+      passwordHash: localPasswordHash,
+      mustChangePassword: true,
+    },
+  });
 });
 
 describe('Lab 3 authentication API', () => {
