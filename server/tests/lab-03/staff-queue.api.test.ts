@@ -86,7 +86,23 @@ async function seedQueueTickets() {
 
 beforeEach(async () => {
   await prisma.session.deleteMany();
-  await prisma.user.updateMany({ data: { passwordHash: localPasswordHash, mustChangePassword: false } });
+
+  await prisma.user.updateMany({
+    where: {
+      email: {
+        in: [
+          'marcus@example.com',
+          'noah.it@example.com',
+          'admin@example.com',
+        ],
+      },
+    },
+    data: {
+      passwordHash: localPasswordHash,
+      mustChangePassword: false,
+    },
+  });
+
   await seedQueueTickets();
 });
 
@@ -98,7 +114,7 @@ describe('API-15: Staff Queue role gate', () => {
   });
 
   it('returns 403 for REQUESTER role', async () => {
-    const { agent, ready } = agentFor('aiko@example.com');
+    const { agent, ready } = agentFor('marcus@example.com');
     await ready;
     const res = await agent.get('/api/staff/tickets');
     expect(res.status).toBe(403);
