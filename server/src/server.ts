@@ -634,6 +634,145 @@ app.post('/api/tickets', (req, res, next) => {
   }
 });
 
+// ─── IT Staff endpoints ───────────────────────────────────────────────────────
+
+const staffStatuses = new Set([
+  'New', 'Open', 'In Progress', 'Waiting for Requester',
+  'Resolved', 'Closed', 'Reopened', 'Cancelled'
+]);
+const staffSortFields = new Set(['createdAt', 'ticketNumber', 'itPriority', 'status', 'updatedAt']);
+
+// Apply auth + password-complete + role guard to all /api/staff/* routes
+app.use('/api/staff', requireAuth, requirePasswordChangeComplete, requireRole('IT_STAFF', 'ADMINISTRATOR'));
+
+app.get('/api/staff/tickets', async (req, res) => {
+  try {
+    const allowedParams = new Set([
+      'search', 'status', 'itPriority', 'ownerId', 'categoryId',
+      'sortBy', 'sortOrder', 'page', 'pageSize'
+    ]);
+    const unknownParam = Object.keys(req.query).find((p) => !allowedParams.has(p));
+    if (unknownParam) {
+      errorResponse(res, 400, 'INVALID_QUERY_PARAMETER', `Unknown query parameter: ${unknownParam}`);
+      return;
+    }
+
+    // Guard against repeated params (array values)
+    if (Object.values(req.query).some((v) => Array.isArray(v))) {
+      errorResponse(res, 400, 'INVALID_QUERY_PARAMETER', 'Query parameters must have a single value.');
+      return;
+    }
+
+    const search = queryValue(req.query.search)?.trim() ?? '';
+    const statusVal = queryValue(req.query.status)?.trim() ?? '';
+    const itPriorityVal = queryValue(req.query.itPriority)?.trim() ?? '';
+    const ownerIdRaw = queryValue(req.query.ownerId)?.trim() ?? '';
+    const categoryIdRaw = queryValue(req.query.categoryId)?.trim() ?? '';
+    const sortByRaw = queryValue(req.query.sortBy)?.trim() ?? '';
+    const sortOrderRaw = queryValue(req.query.sortOrder)?.trim() ?? '';
+    const pageRaw = queryValue(req.query.page)?.trim() ?? '';
+    const pageSizeRaw = queryValue(req.query.pageSize)?.trim() ?? '';
+
+    const fields: Record<string, string> = {};
+
+    const categoryId = parsePositiveQueryInteger(categoryIdRaw);
+    if (categoryId === null) fields.categoryId = 'categoryId must be a positive integer';
+
+    const page = parsePositiveQueryInteger(pageRaw);
+    if (page === null) fields.page = 'page must be a positive integer';
+
+    const pageSize = parsePositiveQueryInteger(pageSizeRaw);
+    if (pageSize === null || (pageSize !== undefined && pageSize > 100)) {
+      fields.pageSize = 'pageSize must be between 1 and 100';
+    }
+
+    if (statusVal && !staffStatuses.has(statusVal)) fields.status = 'status is not a valid ticket status';
+    if (itPriorityVal && !priorities.has(itPriorityVal)) fields.itPriority = 'itPriority must be Low, Medium, High, or Urgent';
+    if (sortByRaw && !staffSortFields.has(sortByRaw)) fields.sortBy = 'sortBy is not a supported sort field';
+    if (sortOrderRaw && !ticketSortOrders.has(sortOrderRaw)) fields.sortOrder = 'sortOrder must be asc or desc';
+
+    // ownerId: must be the literal string "unassigned" or a positive integer
+    let ownerIdFilter: number | 'unassigned' | undefined;
+    if (ownerIdRaw) {
+      if (ownerIdRaw === 'unassigned') {
+        ownerIdFilter = 'unassigned';
+      } else {
+        const parsed = parsePositiveQueryInteger(ownerIdRaw);
+        if (parsed === null || parsed === undefined) {
+          fields.ownerId = 'ownerId must be a positive integer or "unassigned"';
+        } else {
+          ownerIdFilter = parsed;
+        }
+      }
+    }
+
+    if (Object.keys(fields).length > 0) {
+      errorResponse(res, 400, 'INVALID_QUERY_PARAMETER', 'Request query parameters are invalid.', fields);
+      return;
+    }
+
+    const sortBy = (sortByRaw || 'createdAt') as 'createdAt' | 'ticketNumber' | 'itPriority' | 'status' | 'updatedAt';
+    const sortOrder = (sortOrderRaw || 'desc') as 'asc' | 'desc';
+
+    const where: Prisma.TicketWhereInput = {
+      ...(search ? {
+        OR: [
+          { ticketNumber: { contains: search, mode: 'insensitive' } },
+          { summary: { contains: search, mode: 'insensitive' } },
+          { requester: { name: { contains: search, mode: 'insensitive' } } }
+        ]
+      } : {}),
+      ...(statusVal ? { status: statusVal } : {}),
+      ...(itPriorityVal ? { itPriority: itPriorityVal } : {}),
+      ...(categoryId ? { categoryId } : {}),
+      ...(ownerIdFilter === 'unassigned' ? { ownerId: null }
+        : ownerIdFilter !== undefined ? { ownerId: ownerIdFilter }
+        : {}),
+    };
+
+    const resolvedPage = page ?? 1;
+    const resolvedPageSize = pageSize ?? 10;
+
+    const [totalItems, tickets] = await Promise.all([
+      prisma.ticket.count({ where }),
+      prisma.ticket.findMany({
+        where,
+        include: {
+          category: { select: { id: true, name: true, code: true, isActive: true } },
+          relatedSystem: { select: { id: true, name: true, code: true, isActive: true } },
+          requester: { select: { id: true, name: true } },
+          owner: { select: { id: true, name: true } },
+        },
+        orderBy: [{ [sortBy]: sortOrder }, { id: 'desc' }],
+        skip: (resolvedPage - 1) * resolvedPageSize,
+        take: resolvedPageSize,
+      })
+    ]);
+
+    const totalPages = totalItems === 0 ? 0 : Math.ceil(totalItems / resolvedPageSize);
+
+    res.status(200).json({
+      tickets: tickets.map(({ ...ticket }) => ({
+        ...ticket,
+        // owner is already the safe shape from include select
+      })),
+      pagination: {
+        page: resolvedPage,
+        pageSize: resolvedPageSize,
+        totalItems,
+        totalPages,
+        hasNextPage: totalPages > 0 && resolvedPage < totalPages,
+        hasPreviousPage: resolvedPage > 1 && totalPages > 0,
+      },
+      sort: { sortBy, sortOrder },
+    });
+  } catch {
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to load tickets.');
+  }
+});
+
+// ─── Infrastructure ───────────────────────────────────────────────────────────
+
 async function verifyPrismaConnection() {
   try {
     await prisma.$connect();
