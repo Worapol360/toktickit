@@ -6,7 +6,7 @@
  * RESP-03: Mobile layout (<768px)
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { StaffTicketQueue } from '../../pages/StaffTicketQueue';
 
 const categories = [
@@ -81,6 +81,12 @@ function setupFetch(tickets: unknown[] = [], status = 200) {
   return fetchMock;
 }
 
+async function waitForTicketLoaded(text = 'TICK-20260825-0001') {
+  await waitFor(() =>
+    expect(screen.getAllByText(text).length).toBeGreaterThan(0),
+  );
+}
+
 beforeEach(() => {
   vi.restoreAllMocks();
 });
@@ -106,7 +112,9 @@ describe('UI-03: StaffTicketQueue controls and states', () => {
   it('shows empty state when no tickets exist', async () => {
     setupFetch([]);
     render(<StaffTicketQueue onOpenTicket={vi.fn()} />);
-    expect(await screen.findByText(/no tickets/i)).toBeTruthy();
+    expect(
+      await screen.findByRole('heading', { name: /no tickets/i }),
+    ).toBeTruthy();
   });
 
   it('shows no-results state with Clear Filters action when filters active', async () => {
@@ -118,14 +126,18 @@ describe('UI-03: StaffTicketQueue controls and states', () => {
     fireEvent.submit(search.closest('form')!);
 
     await waitFor(() => expect(screen.getByText(/no matching/i)).toBeTruthy());
-    expect(screen.getByRole('button', { name: /clear filters/i })).toBeTruthy();
+    expect(
+      screen.getAllByRole('button', { name: /clear filters/i }).length,
+    ).toBeGreaterThan(0);
   });
 
   it('shows forbidden state when API returns 403', async () => {
     setupFetch([], 403);
     render(<StaffTicketQueue onOpenTicket={vi.fn()} />);
     expect(await screen.findByRole('alert')).toBeTruthy();
-    expect(screen.getByText(/forbidden|permission|access/i)).toBeTruthy();
+    expect(
+      screen.getAllByText(/forbidden|permission|access/i).length,
+    ).toBeGreaterThan(0);
   });
 
   it('shows failure state with Retry button on server error', async () => {
@@ -162,7 +174,9 @@ describe('UI-03: StaffTicketQueue controls and states', () => {
     fireEvent.submit(search.closest('form')!);
 
     await waitFor(() => screen.getByText(/no matching/i));
-    fireEvent.click(screen.getByRole('button', { name: /clear filters/i }));
+    fireEvent.click(
+      screen.getAllByRole('button', { name: /clear filters/i })[0],
+    );
     expect(search).toHaveValue('');
   });
 
@@ -181,7 +195,10 @@ describe('UI-03: StaffTicketQueue controls and states', () => {
     expect(screen.getByRole('columnheader', { name: 'Last Updated' })).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeTruthy();
 
-    expect(screen.getByText('TICK-20260825-0001')).toBeTruthy();
+    const table = screen.getByRole('table');
+    expect(
+      within(table).getByText('TICK-20260825-0001'),
+    ).toBeTruthy();
   });
 
   it('renders "Open" action stub per ticket', async () => {
@@ -189,8 +206,10 @@ describe('UI-03: StaffTicketQueue controls and states', () => {
     setupFetch([mockTicket()]);
     render(<StaffTicketQueue onOpenTicket={onOpenTicket} />);
 
-    await screen.findByText('TICK-20260825-0001');
-    fireEvent.click(screen.getByRole('button', { name: /open/i }));
+    await waitForTicketLoaded();
+    fireEvent.click(
+      screen.getAllByRole('button', { name: /open/i })[0],
+    );
     expect(onOpenTicket).toHaveBeenCalledWith(101);
   });
 
@@ -198,7 +217,7 @@ describe('UI-03: StaffTicketQueue controls and states', () => {
     setupFetch([mockTicket({ owner: null })]);
     render(<StaffTicketQueue onOpenTicket={vi.fn()} />);
 
-    await screen.findByText('TICK-20260825-0001');
+    await waitForTicketLoaded();
     expect(screen.getAllByText('Unassigned').length).toBeGreaterThan(0);
   });
 
@@ -217,7 +236,7 @@ describe('UI-03: StaffTicketQueue controls and states', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     render(<StaffTicketQueue onOpenTicket={vi.fn()} />);
-    await screen.findByText('TICK-20260825-0001');
+    await waitForTicketLoaded();
     expect(screen.getByRole('navigation', { name: /pages/i })).toBeTruthy();
   });
 });
@@ -228,7 +247,7 @@ describe('STYLE-01: Badge styling tokens', () => {
   it('priority badge has priority-badge class', async () => {
     setupFetch([mockTicket()]);
     render(<StaffTicketQueue onOpenTicket={vi.fn()} />);
-    await screen.findByText('TICK-20260825-0001');
+    await waitForTicketLoaded();
 
     const badges = document.querySelectorAll('.priority-badge');
     expect(badges.length).toBeGreaterThan(0);
@@ -237,7 +256,7 @@ describe('STYLE-01: Badge styling tokens', () => {
   it('status badge has status-badge class', async () => {
     setupFetch([mockTicket()]);
     render(<StaffTicketQueue onOpenTicket={vi.fn()} />);
-    await screen.findByText('TICK-20260825-0001');
+    await waitForTicketLoaded();
 
     const badges = document.querySelectorAll('.status-badge');
     expect(badges.length).toBeGreaterThan(0);
@@ -246,7 +265,7 @@ describe('STYLE-01: Badge styling tokens', () => {
   it('Unassigned badge has ownership-badge class', async () => {
     setupFetch([mockTicket({ owner: null })]);
     render(<StaffTicketQueue onOpenTicket={vi.fn()} />);
-    await screen.findByText('TICK-20260825-0001');
+    await waitForTicketLoaded();
 
     const badges = document.querySelectorAll('.ownership-badge');
     expect(badges.length).toBeGreaterThan(0);
@@ -259,7 +278,7 @@ describe('RESP-01: Desktop layout (>=992px)', () => {
   it('table is present in the DOM (visible at desktop width)', async () => {
     setupFetch([mockTicket()]);
     render(<StaffTicketQueue onOpenTicket={vi.fn()} />);
-    await screen.findByText('TICK-20260825-0001');
+    await waitForTicketLoaded();
     expect(document.querySelector('.tickets-table')).toBeTruthy();
   });
 });
@@ -268,7 +287,7 @@ describe('RESP-02: Tablet layout (768-991px)', () => {
   it('both table and card regions are present in DOM (CSS handles visibility)', async () => {
     setupFetch([mockTicket()]);
     render(<StaffTicketQueue onOpenTicket={vi.fn()} />);
-    await screen.findByText('TICK-20260825-0001');
+    await waitForTicketLoaded();
     // Both containers exist; CSS media queries control which is shown at tablet width.
     expect(document.querySelector('.tickets-table')).toBeTruthy();
     expect(document.querySelector('.ticket-cards')).toBeTruthy();
@@ -279,7 +298,7 @@ describe('RESP-03: Mobile layout (<768px)', () => {
   it('card region is present in DOM with required fields', async () => {
     setupFetch([mockTicket()]);
     render(<StaffTicketQueue onOpenTicket={vi.fn()} />);
-    await screen.findByText('TICK-20260825-0001');
+    await waitForTicketLoaded();
 
     const cards = document.querySelectorAll('.ticket-card');
     expect(cards.length).toBeGreaterThan(0);
@@ -297,7 +316,7 @@ describe('RESP-03: Mobile layout (<768px)', () => {
     const onOpenTicket = vi.fn();
     setupFetch([mockTicket()]);
     render(<StaffTicketQueue onOpenTicket={onOpenTicket} />);
-    await screen.findByText('TICK-20260825-0001');
+    await waitForTicketLoaded();
 
     const cardOpen = screen.getAllByRole('button', { name: /open/i });
     expect(cardOpen.length).toBeGreaterThan(0);
