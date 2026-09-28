@@ -36,7 +36,55 @@ const allowedExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.pdf']);
 const priorities = new Set(['Low', 'Medium', 'High', 'Urgent']);
 const attachmentRoot = path.resolve(process.env.ATTACHMENT_STORAGE_PATH ?? 'storage/attachments');
 
+export const ALL_STATUSES = [
+  'New',
+  'Open',
+  'In Progress',
+  'Waiting for Requester',
+  'Resolved',
+  'Closed',
+  'Reopened',
+  'Cancelled'
+] as const;
+
+export const STATUS_TRANSITIONS: Record<string, string[]> = {
+  'New': ['Open', 'Cancelled'],
+  'Open': ['In Progress', 'Cancelled'],
+  'In Progress': ['Waiting for Requester', 'Resolved', 'Cancelled'],
+  'Waiting for Requester': ['In Progress', 'Resolved', 'Cancelled'],
+  'Resolved': ['Closed', 'Reopened'],
+  'Closed': ['Reopened'],
+  'Reopened': ['In Progress', 'Cancelled'],
+  'Cancelled': []
+};
+
+export function isValidStatusTransition(from: string, to: string): boolean {
+  return STATUS_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+export async function createPublicComment(ticketId: number, authorId: number, rawContent: unknown) {
+  const content = typeof rawContent === 'string' ? rawContent.trim() : '';
+  if (content.length < 5 || content.length > 2000) {
+    return {
+      kind: 'validation_error' as const,
+      message: 'Comment must be between 5 and 2000 characters.'
+    };
+  }
+  const comment = await prisma.publicComment.create({
+    data: {
+      ticketId,
+      authorId,
+      content
+    },
+    include: {
+      author: { select: { id: true, name: true, role: true } }
+    }
+  });
+  return { kind: 'success' as const, comment };
+}
+
 type UploadedFile = {
+
   originalname: string;
   mimetype: string;
   size: number;
@@ -48,8 +96,8 @@ function ticketNumber() {
   return `TICK-${date}-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
 }
 
-function parsePositiveId(value: string) {
-  if (!/^\d+$/.test(value)) return null;
+function parsePositiveId(value: unknown): number | null {
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) return null;
   const id = Number(value);
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
@@ -168,7 +216,7 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
 
 app.use('/api/categories', requireAuth, requirePasswordChangeComplete);
 app.use('/api/related-systems', requireAuth, requirePasswordChangeComplete);
-app.use('/api/tickets', requireAuth, requirePasswordChangeComplete, requireRole('REQUESTER'));
+app.use('/api/tickets', requireAuth, requirePasswordChangeComplete);
 
 function getRequesterContext(req: AuthenticatedRequest) {
   return req.user?.role === 'REQUESTER' ? req.user : null;
@@ -219,7 +267,7 @@ function parsePositiveQueryInteger(value: string | undefined) {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-app.get('/api/tickets', async (req, res) => {
+app.get('/api/tickets', requireRole('REQUESTER'), async (req, res) => {
   try {
     const requester = await getRequesterContext(req);
     if (!requester) {
@@ -316,7 +364,7 @@ app.get('/api/tickets', async (req, res) => {
   }
 });
 
-app.get('/api/tickets/:id', async (req, res) => {
+app.get('/api/tickets/:id', requireRole('REQUESTER'), async (req, res) => {
   try {
     const id = parsePositiveId(req.params.id);
     if (id === null) {
@@ -349,7 +397,7 @@ app.get('/api/tickets/:id', async (req, res) => {
   }
 });
 
-app.post('/api/tickets/:id/attachments', (req, res, next) => {
+app.post('/api/tickets/:id/attachments', requireRole('REQUESTER'), (req, res, next) => {
   upload.array('attachments', 6)(req, res, (error: unknown) => {
     if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
       errorResponse(res, 400, 'FILE_TOO_LARGE', 'Each attachment must be 5 MB or smaller.');
@@ -428,7 +476,7 @@ app.post('/api/tickets/:id/attachments', (req, res, next) => {
   }
 });
 
-app.get('/api/tickets/:ticketId/attachments/:attachmentId', async (req, res) => {
+app.get('/api/tickets/:ticketId/attachments/:attachmentId', requireRole('REQUESTER'), async (req, res) => {
   try {
     const ticketId = parsePositiveId(req.params.ticketId);
     const attachmentId = parsePositiveId(req.params.attachmentId);
@@ -454,7 +502,7 @@ app.get('/api/tickets/:ticketId/attachments/:attachmentId', async (req, res) => 
   }
 });
 
-app.get('/api/tickets/:ticketId/attachments/:attachmentId/download', async (req, res) => {
+app.get('/api/tickets/:ticketId/attachments/:attachmentId/download', requireRole('REQUESTER'), async (req, res) => {
   try {
     const ticketId = parsePositiveId(req.params.ticketId);
     const attachmentId = parsePositiveId(req.params.attachmentId);
@@ -487,7 +535,7 @@ app.get('/api/tickets/:ticketId/attachments/:attachmentId/download', async (req,
   }
 });
 
-app.delete('/api/tickets/:ticketId/attachments/:attachmentId', async (req, res) => {
+app.delete('/api/tickets/:ticketId/attachments/:attachmentId', requireRole('REQUESTER'), async (req, res) => {
   try {
     const ticketId = parsePositiveId(req.params.ticketId);
     const attachmentId = parsePositiveId(req.params.attachmentId);
@@ -528,7 +576,8 @@ app.delete('/api/tickets/:ticketId/attachments/:attachmentId', async (req, res) 
   }
 });
 
-app.post('/api/tickets', (req, res, next) => {
+app.post('/api/tickets', requireRole('REQUESTER'), (req, res, next) => {
+
   upload.array('attachments', 6)(req, res, (error: unknown) => {
     if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
       errorResponse(res, 400, 'FILE_TOO_LARGE', 'Each attachment must be 5 MB or smaller.');
@@ -631,6 +680,104 @@ app.post('/api/tickets', (req, res, next) => {
       return;
     }
     errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to create ticket.');
+  }
+});
+
+app.get('/api/tickets/:id/comments', requireRole('REQUESTER', 'IT_STAFF', 'ADMINISTRATOR'), async (req, res) => {
+  try {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) {
+      errorResponse(res, 400, 'INVALID_TICKET_ID', 'Ticket ID must be a positive integer.');
+      return;
+    }
+    const user = (req as AuthenticatedRequest).user!;
+    const ticket = await prisma.ticket.findUnique({ where: { id } });
+    if (!ticket) {
+      errorResponse(res, 404, 'TICKET_NOT_FOUND', 'Ticket not found.');
+      return;
+    }
+    if (user.role === 'REQUESTER' && ticket.requesterId !== user.id) {
+      errorResponse(res, 404, 'TICKET_NOT_FOUND', 'Ticket not found.');
+      return;
+    }
+
+    const comments = await prisma.publicComment.findMany({
+      where: { ticketId: id },
+      include: { author: { select: { id: true, name: true, role: true } } },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    res.status(200).json({ comments });
+  } catch {
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to load comments.');
+  }
+});
+
+app.post('/api/tickets/:id/comments', requireRole('REQUESTER', 'IT_STAFF', 'ADMINISTRATOR'), async (req, res) => {
+  try {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) {
+      errorResponse(res, 400, 'INVALID_TICKET_ID', 'Ticket ID must be a positive integer.');
+      return;
+    }
+    const user = (req as AuthenticatedRequest).user!;
+    const ticket = await prisma.ticket.findUnique({ where: { id } });
+    if (!ticket) {
+      errorResponse(res, 404, 'TICKET_NOT_FOUND', 'Ticket not found.');
+      return;
+    }
+    if (user.role === 'REQUESTER' && ticket.requesterId !== user.id) {
+      errorResponse(res, 404, 'TICKET_NOT_FOUND', 'Ticket not found.');
+      return;
+    }
+
+    const result = await createPublicComment(id, user.id, req.body?.content);
+    if (result.kind === 'validation_error') {
+      errorResponse(res, 400, 'VALIDATION_ERROR', result.message);
+      return;
+    }
+
+    res.status(201).json({ comment: result.comment });
+  } catch {
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to post comment.');
+  }
+});
+
+app.post('/api/tickets/:id/mark-resolved', requireRole('REQUESTER'), async (req, res) => {
+  try {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) {
+      errorResponse(res, 400, 'INVALID_TICKET_ID', 'Ticket ID must be a positive integer.');
+      return;
+    }
+    const user = (req as AuthenticatedRequest).user!;
+    const ticket = await prisma.ticket.findFirst({
+      where: { id, requesterId: user.id },
+      include: { category: true, relatedSystem: true, attachments: true }
+    });
+    if (!ticket) {
+      errorResponse(res, 404, 'TICKET_NOT_FOUND', 'Ticket not found.');
+      return;
+    }
+    if (['Closed', 'Cancelled'].includes(ticket.status)) {
+      errorResponse(res, 409, 'TICKET_ALREADY_CLOSED', 'Cannot mark closed or cancelled ticket as resolved.');
+      return;
+    }
+
+    const updated = await prisma.ticket.update({
+      where: { id },
+      data: { requesterMarkedResolved: true },
+      include: { category: true, relatedSystem: true, attachments: true }
+    });
+
+    res.status(200).json({
+      ticket: {
+        ...updated,
+        attachments: updated.attachments.map(safeAttachment)
+      }
+    });
+  } catch {
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to mark ticket as resolved.');
   }
 });
 
@@ -754,7 +901,6 @@ app.get('/api/staff/tickets', async (req, res) => {
     res.status(200).json({
       tickets: tickets.map(({ ...ticket }) => ({
         ...ticket,
-        // owner is already the safe shape from include select
       })),
       pagination: {
         page: resolvedPage,
@@ -770,6 +916,250 @@ app.get('/api/staff/tickets', async (req, res) => {
     errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to load tickets.');
   }
 });
+
+app.get('/api/staff/tickets/:id', async (req, res) => {
+  try {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) {
+      errorResponse(res, 400, 'INVALID_TICKET_ID', 'Ticket ID must be a positive integer.');
+      return;
+    }
+
+    const ticket = await prisma.ticket.findUnique({
+      where: { id },
+      include: {
+        category: { select: { id: true, name: true, code: true, isActive: true } },
+        relatedSystem: { select: { id: true, name: true, code: true, isActive: true } },
+        requester: { select: { id: true, name: true, email: true, department: true } },
+        owner: { select: { id: true, name: true, email: true, role: true } },
+        attachments: true
+      }
+    });
+    if (!ticket) {
+      errorResponse(res, 404, 'TICKET_NOT_FOUND', 'Ticket not found.');
+      return;
+    }
+
+    const [comments, notes] = await Promise.all([
+      prisma.publicComment.findMany({
+        where: { ticketId: id },
+        include: { author: { select: { id: true, name: true, role: true } } },
+        orderBy: { createdAt: 'asc' }
+      }),
+      prisma.internalNote.findMany({
+        where: { ticketId: id },
+        include: { author: { select: { id: true, name: true, role: true } } },
+        orderBy: { createdAt: 'asc' }
+      })
+    ]);
+
+    res.status(200).json({
+      ticket: {
+        ...ticket,
+        attachments: ticket.attachments.map(safeAttachment)
+      },
+      comments,
+      notes
+    });
+  } catch {
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to load ticket detail.');
+  }
+});
+
+app.patch('/api/staff/tickets/:id/owner', async (req, res) => {
+  try {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) {
+      errorResponse(res, 400, 'INVALID_TICKET_ID', 'Ticket ID must be a positive integer.');
+      return;
+    }
+
+    const ticket = await prisma.ticket.findUnique({ where: { id } });
+    if (!ticket) {
+      errorResponse(res, 404, 'TICKET_NOT_FOUND', 'Ticket not found.');
+      return;
+    }
+
+    const rawOwnerId = req.body?.ownerId;
+    if (rawOwnerId === undefined || rawOwnerId === null) {
+      errorResponse(res, 400, 'VALIDATION_ERROR', 'ownerId is required.');
+      return;
+    }
+    const ownerId = typeof rawOwnerId === 'number' ? rawOwnerId : parsePositiveId(String(rawOwnerId));
+    if (ownerId === null) {
+      errorResponse(res, 400, 'VALIDATION_ERROR', 'ownerId must be a positive integer.');
+      return;
+    }
+
+    const targetUser = await prisma.user.findUnique({ where: { id: ownerId } });
+    if (!targetUser) {
+      errorResponse(res, 404, 'USER_NOT_FOUND', 'Target owner user not found.');
+      return;
+    }
+    if (!targetUser.isActive || !['IT_STAFF', 'ADMINISTRATOR'].includes(targetUser.role)) {
+      errorResponse(res, 400, 'VALIDATION_ERROR', 'Owner must be an active IT Staff or Administrator.');
+      return;
+    }
+
+    const updated = await prisma.ticket.update({
+      where: { id },
+      data: { ownerId },
+      include: {
+        category: true,
+        relatedSystem: true,
+        requester: { select: { id: true, name: true } },
+        owner: { select: { id: true, name: true } }
+      }
+    });
+
+    res.status(200).json({ ticket: updated });
+  } catch {
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to update ticket owner.');
+  }
+});
+
+app.patch('/api/staff/tickets/:id/priority', async (req, res) => {
+  try {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) {
+      errorResponse(res, 400, 'INVALID_TICKET_ID', 'Ticket ID must be a positive integer.');
+      return;
+    }
+
+    const ticket = await prisma.ticket.findUnique({ where: { id } });
+    if (!ticket) {
+      errorResponse(res, 404, 'TICKET_NOT_FOUND', 'Ticket not found.');
+      return;
+    }
+
+    const itPriority = typeof req.body?.itPriority === 'string' ? req.body.itPriority.trim() : '';
+    if (!priorities.has(itPriority)) {
+      errorResponse(res, 400, 'VALIDATION_ERROR', 'itPriority must be Low, Medium, High, or Urgent.');
+      return;
+    }
+
+    const updated = await prisma.ticket.update({
+      where: { id },
+      data: { itPriority },
+      include: {
+        category: true,
+        relatedSystem: true,
+        requester: { select: { id: true, name: true } },
+        owner: { select: { id: true, name: true } }
+      }
+    });
+
+    res.status(200).json({ ticket: updated });
+  } catch {
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to update ticket priority.');
+  }
+});
+
+app.patch('/api/staff/tickets/:id/status', async (req, res) => {
+  try {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) {
+      errorResponse(res, 400, 'INVALID_TICKET_ID', 'Ticket ID must be a positive integer.');
+      return;
+    }
+
+    const ticket = await prisma.ticket.findUnique({ where: { id } });
+    if (!ticket) {
+      errorResponse(res, 404, 'TICKET_NOT_FOUND', 'Ticket not found.');
+      return;
+    }
+
+    const status = typeof req.body?.status === 'string' ? req.body.status.trim() : '';
+    if (!staffStatuses.has(status)) {
+      errorResponse(res, 400, 'VALIDATION_ERROR', 'Invalid status value.');
+      return;
+    }
+
+    if (!isValidStatusTransition(ticket.status, status)) {
+      errorResponse(res, 409, 'INVALID_STATUS_TRANSITION', `Status transition from ${ticket.status} to ${status} is not permitted.`);
+      return;
+    }
+
+    const updated = await prisma.ticket.update({
+      where: { id },
+      data: { status },
+      include: {
+        category: true,
+        relatedSystem: true,
+        requester: { select: { id: true, name: true } },
+        owner: { select: { id: true, name: true } }
+      }
+    });
+
+    res.status(200).json({ ticket: updated });
+  } catch {
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to update ticket status.');
+  }
+});
+
+app.get('/api/staff/tickets/:id/notes', async (req, res) => {
+  try {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) {
+      errorResponse(res, 400, 'INVALID_TICKET_ID', 'Ticket ID must be a positive integer.');
+      return;
+    }
+
+    const ticket = await prisma.ticket.findUnique({ where: { id } });
+    if (!ticket) {
+      errorResponse(res, 404, 'TICKET_NOT_FOUND', 'Ticket not found.');
+      return;
+    }
+
+    const notes = await prisma.internalNote.findMany({
+      where: { ticketId: id },
+      include: { author: { select: { id: true, name: true, role: true } } },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    res.status(200).json({ notes });
+  } catch {
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to load internal notes.');
+  }
+});
+
+app.post('/api/staff/tickets/:id/notes', async (req, res) => {
+  try {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) {
+      errorResponse(res, 400, 'INVALID_TICKET_ID', 'Ticket ID must be a positive integer.');
+      return;
+    }
+
+    const ticket = await prisma.ticket.findUnique({ where: { id } });
+    if (!ticket) {
+      errorResponse(res, 404, 'TICKET_NOT_FOUND', 'Ticket not found.');
+      return;
+    }
+
+    const content = typeof req.body?.content === 'string' ? req.body.content.trim() : '';
+    if (content.length < 5 || content.length > 2000) {
+      errorResponse(res, 400, 'VALIDATION_ERROR', 'Note must be between 5 and 2000 characters.');
+      return;
+    }
+
+    const note = await prisma.internalNote.create({
+      data: {
+        ticketId: id,
+        authorId: (req as AuthenticatedRequest).user!.id,
+        content
+      },
+      include: {
+        author: { select: { id: true, name: true, role: true } }
+      }
+    });
+
+    res.status(201).json({ note });
+  } catch {
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to create internal note.');
+  }
+});
+
 
 // ─── Infrastructure ───────────────────────────────────────────────────────────
 

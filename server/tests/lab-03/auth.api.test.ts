@@ -6,7 +6,21 @@ import prisma from '../../src/prisma.js';
 const localPasswordHash = '$2b$12$MvQuSTNtpiuJmfaKc7j0Nu0FipBQuY31F6ojkIMWw2OMTZoK5lUkq';
 
 beforeEach(async () => {
-  await prisma.session.deleteMany();
+  const authUsers = await prisma.user.findMany({
+    where: {
+      email: {
+        in: [
+          'aiko@example.com',
+          'daniel@example.com',
+          'inactive@example.com',
+        ],
+      },
+    },
+    select: { id: true }
+  });
+  await prisma.session.deleteMany({
+    where: { userId: { in: authUsers.map((u) => u.id) } }
+  });
 
   await prisma.user.updateMany({
     where: {
@@ -24,6 +38,7 @@ beforeEach(async () => {
     },
   });
 });
+
 
 describe('Lab 3 authentication API', () => {
   it('API-01 logs in an active user and establishes a session', async () => {

@@ -85,7 +85,21 @@ async function seedQueueTickets() {
 }
 
 beforeEach(async () => {
-  await prisma.session.deleteMany();
+  const queueUsers = await prisma.user.findMany({
+    where: {
+      email: {
+        in: [
+          'marcus@example.com',
+          'noah.it@example.com',
+          'admin@example.com',
+        ],
+      },
+    },
+    select: { id: true }
+  });
+  await prisma.session.deleteMany({
+    where: { userId: { in: queueUsers.map((u) => u.id) } }
+  });
 
   await prisma.user.updateMany({
     where: {
@@ -105,6 +119,7 @@ beforeEach(async () => {
 
   await seedQueueTickets();
 });
+
 
 describe('API-15: Staff Queue role gate', () => {
   it('returns 401 for unauthenticated request', async () => {
