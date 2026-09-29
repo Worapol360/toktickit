@@ -6,7 +6,6 @@ import { InternalNotesSection, type InternalNote } from './InternalNotesSection'
 type UserOption = {
   id: number;
   name: string;
-  role: string;
 };
 
 type Ticket = {
@@ -133,15 +132,14 @@ export function StaffTicketDetail({ ticketId, currentUserId, onBack }: StaffTick
   };
 
   const handleOpenReassign = async () => {
+    if (!ticket) return;
     setShowReassign(true);
     setActionError('');
     try {
-      // If admin users endpoint or mock staff users available
-      const res = await fetch('/api/admin/users', { credentials: 'same-origin' });
+      const res = await fetch(`/api/staff/tickets/${ticket.id}/assignable-owners`, { credentials: 'same-origin' });
       if (res.ok) {
         const body = await res.json();
-        const activeStaff = (body.users ?? []).filter((u: any) => u.isActive && (u.role === 'IT_STAFF' || u.role === 'ADMINISTRATOR'));
-        setStaffUsers(activeStaff);
+        setStaffUsers(body.owners ?? []);
       }
     } catch {
       // Best effort
@@ -319,7 +317,7 @@ export function StaffTicketDetail({ ticketId, currentUserId, onBack }: StaffTick
                   <option value="">Select staff user...</option>
                   {staffUsers.map((u) => (
                     <option key={u.id} value={u.id}>
-                      {u.name} ({u.role === 'ADMINISTRATOR' ? 'Admin' : 'IT Staff'})
+                      {u.name}
                     </option>
                   ))}
                 </select>

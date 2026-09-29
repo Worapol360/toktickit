@@ -966,6 +966,35 @@ app.get('/api/staff/tickets/:id', async (req, res) => {
   }
 });
 
+app.get('/api/staff/tickets/:id/assignable-owners', async (req, res) => {
+  try {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) {
+      errorResponse(res, 400, 'INVALID_TICKET_ID', 'Ticket ID must be a positive integer.');
+      return;
+    }
+
+    const ticket = await prisma.ticket.findUnique({ where: { id } });
+    if (!ticket) {
+      errorResponse(res, 404, 'TICKET_NOT_FOUND', 'Ticket not found.');
+      return;
+    }
+
+    const owners = await prisma.user.findMany({
+      where: {
+        isActive: true,
+        role: { in: ['IT_STAFF', 'ADMINISTRATOR'] }
+      },
+      select: { id: true, name: true },
+      orderBy: [{ name: 'asc' }, { id: 'asc' }]
+    });
+
+    res.status(200).json({ owners });
+  } catch {
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to load assignable owners.');
+  }
+});
+
 app.patch('/api/staff/tickets/:id/owner', async (req, res) => {
   try {
     const id = parsePositiveId(req.params.id);

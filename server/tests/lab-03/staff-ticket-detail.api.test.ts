@@ -465,4 +465,108 @@ describe('Staff Ticket Detail API (API-16 to API-20)', () => {
     expect(patchRes.status).toBe(409);
     expect(patchRes.body.error.code).toBe('INVALID_STATUS_TRANSITION');
   });
+
+  describe('GET /api/staff/tickets/:id/assignable-owners', () => {
+    it('returns 403 FORBIDDEN for REQUESTER role', async () => {
+      const ticket = await createTestTicket({
+        ticketNumber: 'TICK-TEST-DT010',
+        summary: 'Owners endpoint requester access test'
+      });
+
+      const { agent, ready } = agentFor(requester.email);
+      await ready;
+
+      const res = await agent.get(`/api/staff/tickets/${ticket.id}/assignable-owners`);
+      expect(res.status).toBe(403);
+      expect(res.body.error.code).toBe('FORBIDDEN');
+    });
+
+    it('allows IT_STAFF to access and returns active IT_STAFF/ADMINISTRATOR users', async () => {
+      const ticket = await createTestTicket({
+        ticketNumber: 'TICK-TEST-DT011',
+        summary: 'Owners endpoint staff access test'
+      });
+
+      const { agent, ready } = agentFor(staff1.email);
+      await ready;
+
+      const res = await agent.get(`/api/staff/tickets/${ticket.id}/assignable-owners`);
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body.owners)).toBe(true);
+
+      const ownerIds = res.body.owners.map((o: { id: number }) => o.id);
+      expect(ownerIds).toContain(staff1.id);
+      expect(ownerIds).toContain(staff2.id);
+      expect(ownerIds).toContain(adminUser.id);
+    });
+
+    it('allows ADMINISTRATOR to access the endpoint', async () => {
+      const ticket = await createTestTicket({
+        ticketNumber: 'TICK-TEST-DT012',
+        summary: 'Owners endpoint admin access test'
+      });
+
+      const { agent, ready } = agentFor(adminUser.email);
+      await ready;
+
+      const res = await agent.get(`/api/staff/tickets/${ticket.id}/assignable-owners`);
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body.owners)).toBe(true);
+    });
+
+    it('excludes inactive IT_STAFF/ADMINISTRATOR users and requester-role users', async () => {
+      const ticket = await createTestTicket({
+        ticketNumber: 'TICK-TEST-DT013',
+        summary: 'Owners endpoint exclusion test'
+      });
+
+      const { agent, ready } = agentFor(staff1.email);
+      await ready;
+
+      const res = await agent.get(`/api/staff/tickets/${ticket.id}/assignable-owners`);
+      expect(res.status).toBe(200);
+
+      const ownerIds = res.body.owners.map((o: { id: number }) => o.id);
+      expect(ownerIds).not.toContain(inactiveStaff.id);
+      expect(ownerIds).not.toContain(requester.id);
+    });
+
+    it('returns exactly the owner-picker fields (id and name only)', async () => {
+      const ticket = await createTestTicket({
+        ticketNumber: 'TICK-TEST-DT014',
+        summary: 'Owners endpoint shape test'
+      });
+
+      const { agent, ready } = agentFor(staff1.email);
+      await ready;
+
+      const res = await agent.get(`/api/staff/tickets/${ticket.id}/assignable-owners`);
+      expect(res.status).toBe(200);
+      expect(res.body.owners.length).toBeGreaterThan(0);
+
+      for (const owner of res.body.owners) {
+        expect(Object.keys(owner).sort()).toEqual(['id', 'name']);
+        expect(typeof owner.id).toBe('number');
+        expect(typeof owner.name).toBe('string');
+      }
+    });
+
+    it('returns 404 TICKET_NOT_FOUND for non-existent ticket, consistent with staff detail', async () => {
+      const { agent, ready } = agentFor(staff1.email);
+      await ready;
+
+      const res = await agent.get('/api/staff/tickets/999999/assignable-owners');
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe('TICKET_NOT_FOUND');
+    });
+
+    it('returns 400 INVALID_TICKET_ID for invalid ticket ID', async () => {
+      const { agent, ready } = agentFor(staff1.email);
+      await ready;
+
+      const res = await agent.get('/api/staff/tickets/invalid-id/assignable-owners');
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('INVALID_TICKET_ID');
+    });
+  });
 });
