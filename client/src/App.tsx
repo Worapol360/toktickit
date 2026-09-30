@@ -4,6 +4,7 @@ import { ChangePassword } from './ChangePassword';
 import { Login } from './Login';
 import { CreateTicket } from './lab-02/CreateTicket';
 import { RequesterTicketDetail } from './pages/RequesterTicketDetail';
+import { StaffTicketDetail } from './pages/StaffTicketDetail';
 import { StaffTicketQueue } from './pages/StaffTicketQueue';
 import { MyTickets } from './pages/MyTickets';
 
@@ -86,12 +87,21 @@ function AuthenticatedApp() {
 
   let content: ReactNode;
   const staffQueue = route === '/staff/tickets';
+  const staffDetail = route.match(/^\/staff\/tickets\/(\d+)$/);
   const detail = route.match(/^\/tickets\/(\d+)$/);  
 
   if (staffQueue) {
     content = (
       <StaffTicketQueue
         onOpenTicket={(id) => navigate(`/staff/tickets/${id}`)}
+      />
+    );
+  } else if (staffDetail) {
+    content = (
+      <StaffTicketDetail
+        ticketId={Number(staffDetail[1])}
+        currentUserId={user.id}
+        onBack={() => navigate('/staff/tickets')}
       />
     );
   } else if (route === '/create-ticket') content = <CreateTicket requesterId={String(user.id)} categories={categories} relatedSystems={relatedSystems} onCancel={() => navigate('/')} />;
