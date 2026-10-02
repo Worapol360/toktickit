@@ -5,12 +5,16 @@ import prisma from '../../src/prisma.js';
 
 const localPasswordHash = '$2b$12$MvQuSTNtpiuJmfaKc7j0Nu0FipBQuY31F6ojkIMWw2OMTZoK5lUkq';
 
-// Every user this file creates or owns carries the "testadm-fixture-fixture-" email prefix.
+// Every user this file creates or owns carries the "testadm-fixture-" email prefix.
 // Cleanup is always scoped to those emails — never an unscoped updateMany/deleteMany.
-const ownedEmailPrefix = 'testadm-fixture-fixture-';
+const ownedEmailPrefix = 'testadm-fixture-';
 const secondAdminEmail = 'admin2@example.com';
 // Dedicated admin for this test file to avoid depending on shared seed state.
 const testAdminEmail = 'testadm-fixture-admin@example.com';
+// The two dedicated admins are created/removed by beforeAll/afterAll and must
+// survive the prefix-scoped afterEach cleanup (testadm-fixture-admin@ matches
+// the prefix above; admin2@ does not, but is listed for clarity).
+const excludedFromCleanup = [testAdminEmail, secondAdminEmail];
 
 function agentFor(email: string) {
   const agent = request.agent(app);
@@ -38,7 +42,7 @@ async function createFixtureUser(email: string, overrides: { name?: string; role
 
 async function ownedEmails() {
   const users = await prisma.user.findMany({
-    where: { email: { startsWith: ownedEmailPrefix } },
+    where: { email: { startsWith: ownedEmailPrefix, notIn: excludedFromCleanup } },
     select: { email: true }
   });
   return users.map((user) => user.email);
@@ -499,6 +503,17 @@ describe('API-29: self-deactivation', () => {
 // ─── API-30: Last active Administrator protection ─────────────────────────────
 
 describe('API-30: last active Administrator protection', () => {
+  // BR-20 (LAST_ACTIVE_ADMIN) counts every active Administrator globally, so
+  // deactivateOtherActiveAdmins() must also deactivate the shared seed admin.
+  // Restore that shared account here so this file never leaves it inactive for
+  // other test files.
+  afterEach(async () => {
+    await prisma.user.updateMany({
+      where: { emailNormalized: 'admin@example.com' },
+      data: { isActive: true }
+    });
+  });
+
   it('allows deactivating one of two active Administrators', async () => {
     const { agent, ready } = agentFor(testAdminEmail);
     await ready;
