@@ -12,8 +12,8 @@
 * **PR Link Issue fix (auth test isolation):** https://github.com/Worapol360/toktickit/pull/32
 * **PR Link Issue 3:** https://github.com/Worapol360/toktickit/pull/33
 * **PR Link Issue 4:** https://github.com/Worapol360/toktickit/pull/34
-* **PR Link Issue 5:** https://github.com/Worapol360/toktickit/pull/35
-* **PR Link lab3-staging:** https://github.com/Worapol360/toktickit/pull/36
+* **PR Link Issue 5:** https://github.com/Worapol360/toktickit/pull/37
+* **PR Link lab3-staging:** https://github.com/Worapol360/toktickit/pull/38
 ---
  
 ### Review Comments
@@ -91,7 +91,7 @@
 
 **Comment Issue 5:**
  
-* *From Peer:* 
+* *From Peer:* ครบถ้วนตาม description :)
 * *To Peer:* 
 1.
 
