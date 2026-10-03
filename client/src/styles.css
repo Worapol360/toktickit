@@ -44,3 +44,64 @@ button {
     padding: 10px 6px;
   }
 }
+
+/* User Management screen styles */
+.users-table { width: 100%; border-collapse: collapse; }
+.users-table th, .users-table td { padding: 12px 8px; border-bottom: 1px solid #d7e2dc; text-align: left; }
+.user-list-region { background: #fff; border: 1px solid #d7e2dc; border-radius: 8px; padding: 24px; }
+
+.role-badge-requester { background: #e3ecfa; color: #2b5c9e; }
+.role-badge-it-staff { background: #EAF6EF; color: #006B3C; }
+.role-badge-administrator { background: #006B3C; color: #FFFFFF; }
+
+.user-status-active { color: #006B3C; font-weight: 600; }
+.user-status-inactive { color: #6b7280; font-weight: 600; }
+
+.user-cards { display: none; }
+
+@media (max-width: 991px) {
+  .user-management .user-list-region { padding: 16px; }
+  .user-management .users-table th,
+  .user-management .users-table td {
+    padding: 10px 6px;
+  }
+}
+
+@media (max-width: 767px) {
+  .user-management .users-table { display: none; }
+  .user-management .user-cards { display: grid; gap: 16px; }
+  .user-management .user-card {
+    border: 1px solid #d7e2dc;
+    border-radius: 8px;
+    padding: 16px;
+    overflow-wrap: anywhere;
+  }
+  .user-management .user-card h2 { margin-top: 0; font-size: 18px; }
+  .user-management .user-card dl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .user-management .user-card dt { font-weight: 600; }
+  .user-management .user-card dd { margin: 0; }
+  .user-management .user-card button { width: 100%; margin-top: 12px; }
+}
+
+/* Dialog styles for UserManagement */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 1000;
+}
+.dialog-panel {
+  background: #fff;
+  border: 1px solid #d7e2dc;
+  border-radius: 8px;
+  padding: 24px;
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow: auto;
+}
+.dialog-panel h2 { margin-top: 0; margin-bottom: 16px; }

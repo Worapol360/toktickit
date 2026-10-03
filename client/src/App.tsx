@@ -7,6 +7,7 @@ import { RequesterTicketDetail } from './pages/RequesterTicketDetail';
 import { StaffTicketDetail } from './pages/StaffTicketDetail';
 import { StaffTicketQueue } from './pages/StaffTicketQueue';
 import { MyTickets } from './pages/MyTickets';
+import { UserManagement } from './pages/UserManagement';
 
 type Option = { id: number; name: string };
 
@@ -28,7 +29,7 @@ function AppShell({ currentRoute, onNavigate, onLogout, children }: { currentRou
         }}
       >
         {user &&
-        (user.role === 'IT_STAFF' || user.role === 'ADMINISTRATOR') ? (
+        user.role === 'IT_STAFF' ? (
           <button
             type="button"
             aria-current={
@@ -38,6 +39,27 @@ function AppShell({ currentRoute, onNavigate, onLogout, children }: { currentRou
           >
             Ticket Queue
           </button>
+        ) : user.role === 'ADMINISTRATOR' ? (
+          <>
+            <button
+              type="button"
+              aria-current={
+                currentRoute === '/staff/tickets' ? 'page' : undefined
+              }
+              onClick={() => onNavigate('/staff/tickets')}
+            >
+              Ticket Queue
+            </button>
+            <button
+              type="button"
+              aria-current={
+                currentRoute === '/admin/users' ? 'page' : undefined
+              }
+              onClick={() => onNavigate('/admin/users')}
+            >
+              User Management
+            </button>
+          </>
         ) : (
           <>
             <button
@@ -89,8 +111,11 @@ function AuthenticatedApp() {
   const staffQueue = route === '/staff/tickets';
   const staffDetail = route.match(/^\/staff\/tickets\/(\d+)$/);
   const detail = route.match(/^\/tickets\/(\d+)$/);  
+  const adminUsers = route === '/admin/users';
 
-  if (staffQueue) {
+  if (adminUsers) {
+    content = <UserManagement currentUserId={user.id} />;
+  } else if (staffQueue) {
     content = (
       <StaffTicketQueue
         onOpenTicket={(id) => navigate(`/staff/tickets/${id}`)}

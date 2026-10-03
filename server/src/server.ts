@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import multer from 'multer';
 import type { Prisma } from '@prisma/client';
 import prisma from './prisma.js';
+import { adminUsersRouter } from './routes/admin-users.js';
 import {
   clearSessionCookie,
   csrfGuard,
@@ -1188,6 +1189,11 @@ app.post('/api/staff/tickets/:id/notes', async (req, res) => {
     errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to create internal note.');
   }
 });
+
+// ─── Administrator endpoints ───────────────────────────────────────────────────
+
+// Apply auth + password-complete + role guard to all /api/admin/users/* routes
+app.use('/api/admin/users', requireAuth, requirePasswordChangeComplete, requireRole('ADMINISTRATOR'), adminUsersRouter);
 
 
 // ─── Infrastructure ───────────────────────────────────────────────────────────

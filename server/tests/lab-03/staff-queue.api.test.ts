@@ -34,8 +34,8 @@ function agentFor(email: string) {
 async function seedQueueTickets() {
   const [cat] = await prisma.category.findMany({ take: 1 });
   const [sys] = await prisma.relatedSystem.findMany({ take: 1 });
-  const requester = await prisma.user.findFirst({ where: { role: 'REQUESTER', isActive: true } });
-  const staffUser = await prisma.user.findFirst({ where: { role: 'IT_STAFF', isActive: true } });
+  const requester = await prisma.user.findFirst({ where: { role: 'REQUESTER', isActive: true }, orderBy: { id: 'asc' } });
+  const staffUser = await prisma.user.findFirst({ where: { role: 'IT_STAFF', isActive: true }, orderBy: { id: 'asc' } });
 
   if (!cat || !sys || !requester || !staffUser) return;
 
@@ -207,7 +207,7 @@ describe('API-13: Staff Queue search/filter/sort/pagination', () => {
   });
 
   it('filters by ownerId (numeric — returns only assigned-to-that-owner)', async () => {
-    const staffUser = await prisma.user.findFirst({ where: { role: 'IT_STAFF', isActive: true } });
+    const staffUser = await prisma.user.findFirst({ where: { role: 'IT_STAFF', isActive: true }, orderBy: { id: 'asc' } });
     const { agent, ready } = agentFor('noah.it@example.com');
     await ready;
     const res = await agent.get(`/api/staff/tickets?search=QUEUE-TEST&ownerId=${staffUser!.id}`);
