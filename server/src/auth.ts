@@ -119,4 +119,13 @@ export async function hashPassword(password: string) {
   return bcrypt.hash(password, 12);
 }
 
+// Soft-revokes every active session for a user by stamping revokedAt, the same
+// revocation mechanism the logout route applies to the caller's own session.
+export async function revokeAllSessions(userId: number) {
+  await prisma.session.updateMany({
+    where: { userId, revokedAt: null },
+    data: { revokedAt: new Date() }
+  });
+}
+
 export { errorResponse, tokenHash, type AuthenticatedRequest };
