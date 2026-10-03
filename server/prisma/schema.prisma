@@ -34,10 +34,8 @@ model User {
   mustChangePassword Boolean   @default(true)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
-  tickets            Ticket[]         @relation("RequesterTickets")
-  ownedTickets       Ticket[]         @relation("TicketOwners")
-  publicComments     PublicComment[]
-  internalNotes      InternalNote[]
+  tickets            Ticket[]  @relation("RequesterTickets")
+  ownedTickets       Ticket[]  @relation("TicketOwners")
   sessions           Session[]
 
   @@index([role])
@@ -67,30 +65,25 @@ model RelatedSystem {
 }
 
 model Ticket {
-  id                      Int             @id @default(autoincrement())
-  ticketNumber            String          @unique
-  summary                 String
-  description             String
-  requestedPriority       String
-  itPriority              String?
-  status                  String          @default("New")
-  requesterMarkedResolved Boolean         @default(false)
-  requesterId             Int
-  categoryId              Int
-  relatedSystemId         Int
-  requester               User            @relation("RequesterTickets", fields: [requesterId], references: [id])
-  ownerId                 Int?
-  owner                   User?           @relation("TicketOwners", fields: [ownerId], references: [id])
-  category                Category        @relation(fields: [categoryId], references: [id])
-  relatedSystem           RelatedSystem   @relation(fields: [relatedSystemId], references: [id])
-  attachments             Attachment[]
-  publicComments          PublicComment[]
-  internalNotes           InternalNote[]
-  createdAt               DateTime        @default(now())
-  updatedAt               DateTime        @updatedAt
+  id               Int             @id @default(autoincrement())
+  ticketNumber     String          @unique
+  summary          String
+  description      String
+  requestedPriority String
+  status           String          @default("New")
+  requesterId      Int
+  categoryId       Int
+  relatedSystemId  Int
+  requester        User            @relation("RequesterTickets", fields: [requesterId], references: [id])
+  ownerId          Int?
+  owner            User?           @relation("TicketOwners", fields: [ownerId], references: [id])
+  category         Category        @relation(fields: [categoryId], references: [id])
+  relatedSystem    RelatedSystem   @relation(fields: [relatedSystemId], references: [id])
+  attachments      Attachment[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   @@index([requesterId, createdAt(sort: Desc)])
-  @@index([ownerId, status])
 }
 
 model Attachment {
@@ -106,24 +99,3 @@ model Attachment {
   createdAt     DateTime @default(now())
   ticket        Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 }
-
-model PublicComment {
-  id        Int      @id @default(autoincrement())
-  ticketId  Int
-  authorId  Int
-  content   String
-  createdAt DateTime @default(now())
-  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  author    User     @relation(fields: [authorId], references: [id])
-}
-
-model InternalNote {
-  id        Int      @id @default(autoincrement())
-  ticketId  Int
-  authorId  Int
-  content   String
-  createdAt DateTime @default(now())
-  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  author    User     @relation(fields: [authorId], references: [id])
-}
-
