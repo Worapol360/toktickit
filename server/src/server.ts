@@ -7,6 +7,7 @@ import multer from 'multer';
 import type { Prisma } from '@prisma/client';
 import prisma from './prisma.js';
 import { adminUsersRouter } from './routes/admin-users.js';
+import { actionsTakenListRouter, staffActionsTakenRouter } from './lab-04/actions-taken.routes.js';
 import {
   clearSessionCookie,
   csrfGuard,
@@ -218,6 +219,8 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
 app.use('/api/categories', requireAuth, requirePasswordChangeComplete);
 app.use('/api/related-systems', requireAuth, requirePasswordChangeComplete);
 app.use('/api/tickets', requireAuth, requirePasswordChangeComplete);
+// Lab 4: shared Actions Taken list (own per-route role gate, see D-14)
+app.use('/api/tickets', actionsTakenListRouter);
 
 function getRequesterContext(req: AuthenticatedRequest) {
   return req.user?.role === 'REQUESTER' ? req.user : null;
@@ -792,6 +795,9 @@ const staffSortFields = new Set(['createdAt', 'ticketNumber', 'itPriority', 'sta
 
 // Apply auth + password-complete + role guard to all /api/staff/* routes
 app.use('/api/staff', requireAuth, requirePasswordChangeComplete, requireRole('IT_STAFF', 'ADMINISTRATOR'));
+
+// Lab 4: Actions Taken create/patch (behind the staff guard above)
+app.use('/api/staff/tickets', staffActionsTakenRouter);
 
 app.get('/api/staff/tickets', async (req, res) => {
   try {
