@@ -50,8 +50,11 @@ const FOLLOW_UP_REQUIRED_MESSAGE = 'followUpRequired must be a boolean.';
 const CLIENT_REQUEST_ID_MESSAGE = 'clientRequestId must be a string.';
 const FOLLOW_UP_COMPLETION_MESSAGE = 'Follow-up completion requires follow-up to be required.';
 const FOLLOW_UP_COMPLETED_MESSAGE = 'followUpCompleted must be a boolean.';
+const CLIENT_REQUEST_ID_UUID_MESSAGE = 'clientRequestId must be a UUID string.';
 
 const FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -171,7 +174,14 @@ export function validateCreateAction(
     if (typeof source.clientRequestId !== 'string') {
       fields.clientRequestId = CLIENT_REQUEST_ID_MESSAGE;
     } else {
-      clientRequestId = source.clientRequestId.trim() === '' ? null : source.clientRequestId.trim();
+      const trimmedClientRequestId = source.clientRequestId.trim();
+      if (trimmedClientRequestId === '') {
+        clientRequestId = null;
+      } else if (!UUID_PATTERN.test(trimmedClientRequestId)) {
+        fields.clientRequestId = CLIENT_REQUEST_ID_UUID_MESSAGE;
+      } else {
+        clientRequestId = trimmedClientRequestId;
+      }
     }
   }
 
@@ -261,8 +271,12 @@ export function validatePatchAction(
     if (!followUpRequired) {
       followUpNote = null;
       followUpCompletedAt = null;
-      if (source.followUpCompleted === true) {
-        fields.followUpCompleted = FOLLOW_UP_COMPLETION_MESSAGE;
+      if (source.followUpCompleted !== undefined) {
+        if (typeof source.followUpCompleted !== 'boolean') {
+          fields.followUpCompleted = FOLLOW_UP_COMPLETED_MESSAGE;
+        } else if (source.followUpCompleted) {
+          fields.followUpCompleted = FOLLOW_UP_COMPLETION_MESSAGE;
+        }
       }
     } else {
       if (source.followUpNote !== undefined) {

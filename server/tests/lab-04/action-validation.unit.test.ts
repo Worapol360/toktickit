@@ -204,6 +204,24 @@ describe('UNIT-04 validateCreateAction', () => {
     expect(createOk(baseCreate()).clientRequestId).toBeNull();
   });
 
+  it('validates clientRequestId as a UUID and keeps omitted/empty values as null', () => {
+    const valid = '6f1c2a8e-6a0d-4a63-9d5b-2f6f3b7c0a11';
+    expect(createOk(baseCreate({ clientRequestId: valid })).clientRequestId).toBe(valid);
+    expect(createOk(baseCreate({ clientRequestId: ' 6F1C2A8E-6A0D-4A63-9D5B-2F6F3B7C0A11 ' })).clientRequestId)
+      .toBe('6F1C2A8E-6A0D-4A63-9D5B-2F6F3B7C0A11');
+    expect(createOk(baseCreate({ clientRequestId: null })).clientRequestId).toBeNull();
+    expect(createOk(baseCreate({ clientRequestId: '   ' })).clientRequestId).toBeNull();
+
+    expect(createFields(baseCreate({ clientRequestId: 'not-a-uuid' })).clientRequestId)
+      .toBe('clientRequestId must be a UUID string.');
+    expect(createFields(baseCreate({ clientRequestId: '6f1c2a8e-6a0d-4a63-9d5b' })).clientRequestId)
+      .toBe('clientRequestId must be a UUID string.');
+    expect(createFields(baseCreate({ clientRequestId: `${valid}x` })).clientRequestId)
+      .toBe('clientRequestId must be a UUID string.');
+    expect(createFields(baseCreate({ clientRequestId: 'x'.repeat(500) })).clientRequestId)
+      .toBe('clientRequestId must be a UUID string.');
+  });
+
   it('reports multiple field errors at once', () => {
     const fields = createFields({ description: 'ab', result: '', followUpRequired: true, actionAt: 'nope' });
     expect(Object.keys(fields).sort()).toEqual(['actionAt', 'description', 'followUpNote', 'result']);
@@ -266,6 +284,12 @@ describe('UNIT-04 validatePatchAction', () => {
     const fields = patchFields({ expectedVersion: 1, followUpCompleted: true }, noFollowUp);
     expect(fields.followUpCompleted)
       .toBe('Follow-up completion requires follow-up to be required.');
+  });
+
+  it('rejects a non-boolean followUpCompleted even when followUpRequired is false', () => {
+    const noFollowUp: ExistingActionValues = { ...baseExisting, followUpRequired: false, followUpNote: null };
+    const fields = patchFields({ expectedVersion: 1, followUpCompleted: 'yes' }, noFollowUp);
+    expect(fields.followUpCompleted).toBe('followUpCompleted must be a boolean.');
   });
 
   it('clears note and completion when the merged followUpRequired becomes false', () => {
