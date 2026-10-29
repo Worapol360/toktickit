@@ -44,7 +44,17 @@ function makeResponse(body: unknown, status = 200) {
   });
 }
 
-const apiBodies = {
+type ErrorEnvelope = {
+  error: { code: string; message: string; fields?: Record<string, string> };
+};
+type AdminUserBody = { user: typeof currentAdmin };
+
+const apiBodies: {
+  list: { users: (typeof currentAdmin)[] } | ErrorEnvelope;
+  create: AdminUserBody | ErrorEnvelope;
+  update: AdminUserBody | ErrorEnvelope;
+  reset: AdminUserBody | ErrorEnvelope;
+} = {
   list: { users: [currentAdmin, noah, aiko] },
   create: {
     user: {
