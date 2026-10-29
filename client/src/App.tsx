@@ -39,7 +39,7 @@ function AppShell({ currentRoute, onNavigate, onLogout, children }: { currentRou
           >
             Ticket Queue
           </button>
-        ) : user.role === 'ADMINISTRATOR' ? (
+        ) : user?.role === 'ADMINISTRATOR' ? (
           <>
             <button
               type="button"
