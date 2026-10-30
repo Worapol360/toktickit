@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ActionsTakenPanel } from '../lab-04/ActionsTakenPanel';
 import { AttachmentSection, type Attachment } from './AttachmentSection';
 import { CommentThread, type PublicComment } from './CommentThread';
 import { InternalNotesSection, type InternalNote } from './InternalNotesSection';
@@ -103,6 +104,23 @@ export function StaffTicketDetail({ ticketId, currentUserId, onBack }: StaffTick
   useEffect(() => {
     void loadTicketData();
   }, [ticketId]);
+
+  const refreshTicketMeta = async () => {
+    try {
+      const response = await fetch(`/api/staff/tickets/${ticketId}`, { credentials: 'same-origin' });
+      if (!response.ok) return;
+      const body = await response.json();
+      if (body.ticket) {
+        setTicket((prev) => prev ? {
+          ...prev,
+          status: body.ticket.status ?? prev.status,
+          updatedAt: body.ticket.updatedAt ?? prev.updatedAt
+        } : prev);
+      }
+    } catch {
+      // Best effort: keep the currently displayed summary.
+    }
+  };
 
   const handleClaim = async () => {
     if (!ticket || !currentUserId) return;
@@ -410,6 +428,14 @@ export function StaffTicketDetail({ ticketId, currentUserId, onBack }: StaffTick
           <dt>Last Updated</dt><dd>{formatDate(ticket.updatedAt)}</dd>
         </dl>
       </article>
+
+      <ActionsTakenPanel
+        ticketId={ticket.id}
+        ticketStatus={ticket.status}
+        ticketCreatedAt={ticket.createdAt}
+        viewer="staff"
+        onActionsChanged={() => void refreshTicketMeta()}
+      />
 
       <AttachmentSection ticketId={ticket.id} requesterId={String(ticket.requester?.id ?? '')} attachments={ticket.attachments} onChanged={() => void loadTicketData()} />
 
