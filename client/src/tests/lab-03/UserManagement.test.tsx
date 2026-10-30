@@ -44,7 +44,31 @@ function makeResponse(body: unknown, status = 200) {
   });
 }
 
-const apiBodies = {
+type ErrorEnvelope = {
+  error: { code: string; message: string; fields?: Record<string, string> };
+};
+
+type ApiResult<T> = T | ErrorEnvelope;
+
+type AdminUser = {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  isActive: boolean;
+  mustChangePassword: boolean;
+  createdAt: string;
+};
+
+type UserListBody = { users: AdminUser[] };
+type UserBody = { user: AdminUser };
+
+const apiBodies: {
+  list: ApiResult<UserListBody>;
+  create: ApiResult<UserBody>;
+  update: ApiResult<UserBody>;
+  reset: ApiResult<UserBody>;
+} = {
   list: { users: [currentAdmin, noah, aiko] },
   create: {
     user: {
@@ -72,8 +96,8 @@ const errorCodeToStatus: Record<string, number> = {
 
 function statusForBody(body: unknown) {
   if (body && typeof body === 'object' && 'error' in body) {
-    const err = (body as { error?: { code?: string } }).error;
-    if (err?.code && errorCodeToStatus[err.code]) return errorCodeToStatus[err.code];
+    const err = (body as ErrorEnvelope).error;
+    if (err.code && errorCodeToStatus[err.code]) return errorCodeToStatus[err.code];
     return 400;
   }
   return 200;
