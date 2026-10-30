@@ -105,3 +105,245 @@ button {
   overflow: auto;
 }
 .dialog-panel h2 { margin-top: 0; margin-bottom: 16px; }
+
+/* ---------------------------------------------------------------------------
+   Zen Green design tokens (docs/lab-04/ui-spec.md §1).
+   Shared neutrals already used across Labs 1–3 are included so new components
+   can reference them instead of repeating hex values. No other hex values may
+   appear in Lab 4 component files.
+   --------------------------------------------------------------------------- */
+:root {
+  --color-primary: #006B3C;
+  --color-on-primary: #FFFFFF;
+  --color-bg: #F6FAF8;
+  --color-text: #17221C;
+  --color-surface: #FFFFFF;
+  --color-surface-tint: #EAF6EF;
+  --color-border: #D7E2DC;
+  --color-muted-text: #556960;
+  /* NEW Lab 4 tokens */
+  --color-warning-bg: #FFF4D6;
+  --color-warning-text: #5C3D00;
+  --color-danger: #B3261E;
+  --color-danger-bg: #FDECEA;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Lab 4 — Actions Taken panel */
+.actions-panel {
+  margin-top: 32px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 24px;
+  color: var(--color-text);
+}
+.actions-panel :focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.actions-panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.actions-panel-header h2 { margin: 0; font-size: 20px; }
+.actions-count { color: var(--color-muted-text); font-size: 14px; }
+.actions-shared-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--color-surface-tint);
+  color: var(--color-primary);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.actions-tz-label { color: var(--color-muted-text); font-size: 13px; }
+.actions-viewer-note { color: var(--color-muted-text); font-size: 14px; }
+.actions-locked-note {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  border-radius: 6px;
+  padding: 10px 16px;
+  font-weight: 600;
+  margin: 0 0 16px;
+}
+.actions-empty { color: var(--color-muted-text); font-style: italic; }
+.actions-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.actions-table th,
+.actions-table td {
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.actions-cards { display: none; }
+.actions-card {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px;
+  overflow-wrap: anywhere;
+  background: var(--color-surface);
+}
+.actions-card dl {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin: 0;
+}
+.actions-card dt { font-weight: 600; }
+.actions-card dd { margin: 0; }
+.actions-row-highlight { background: var(--color-surface-tint); }
+.actions-edited-marker {
+  display: block;
+  font-size: 13px;
+  color: var(--color-muted-text);
+  font-style: italic;
+  margin-top: 4px;
+}
+.followup-open {
+  color: var(--color-warning-text);
+  background: var(--color-warning-bg);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-weight: 600;
+}
+.followup-done {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+.actions-row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.actions-form {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.actions-form h3 { margin-top: 0; }
+.actions-form-grid { display: grid; gap: 16px; }
+.actions-field label,
+.actions-field-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.actions-required-marker { font-weight: 400; color: var(--color-muted-text); font-size: 13px; }
+.actions-field input[type='datetime-local'],
+.actions-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  font-size: 14px;
+  font-family: inherit;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.actions-field input[aria-invalid='true'],
+.actions-field textarea[aria-invalid='true'] {
+  border-color: var(--color-danger);
+}
+.actions-field-checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.actions-field-hint { color: var(--color-muted-text); font-size: 13px; margin: 4px 0 0; }
+.actions-field-error { color: var(--color-danger); font-size: 13px; font-weight: 600; margin: 4px 0 0; }
+.actions-counter { display: block; text-align: right; font-size: 12px; color: var(--color-muted-text); margin-top: 2px; }
+.actions-performed-by { margin: 0; font-weight: 600; }
+.actions-error-summary {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+.actions-error-summary ul { margin: 8px 0 0; padding-left: 20px; }
+.actions-banner {
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+.actions-banner p { margin: 0 0 8px; }
+.actions-banner p:last-child { margin-bottom: 0; }
+.actions-banner-conflict { background: var(--color-warning-bg); color: var(--color-warning-text); }
+.actions-banner-error { background: var(--color-danger-bg); color: var(--color-danger); }
+.actions-conflict-latest {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+.actions-conflict-latest dl {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+  margin: 8px 0 0;
+}
+.actions-conflict-latest dt { font-weight: 600; }
+.actions-conflict-latest dd { margin: 0; }
+.actions-banner-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.actions-form-buttons { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+.actions-btn {
+  min-width: auto;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: var(--color-surface);
+  color: var(--color-text);
+  min-height: 40px;
+}
+.actions-btn-primary {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border-color: var(--color-primary);
+}
+.actions-btn-secondary { border-color: var(--color-border); }
+.actions-btn-small { padding: 4px 12px; min-height: 32px; }
+.actions-btn:disabled { cursor: not-allowed; opacity: 0.7; }
+.actions-skeleton-row {
+  height: 18px;
+  border-radius: 6px;
+  background: var(--color-surface-tint);
+  margin-bottom: 12px;
+}
+.actions-failure-region { margin-bottom: 16px; }
+
+/* Actions Taken follows the Lab 3 table ↔ cards breakpoint (768px).
+   Recorded in the Issue 3 PR per ui-spec §6. */
+@media (max-width: 767px) {
+  .actions-table { display: none; }
+  .actions-cards { display: grid; gap: 16px; }
+  .actions-btn { width: 100%; min-height: 44px; }
+  .actions-row-actions { flex-direction: column; }
+  .actions-form-buttons { flex-direction: column; }
+}

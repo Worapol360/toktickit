@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ActionsTakenPanel } from '../lab-04/ActionsTakenPanel';
 import { AttachmentSection, type Attachment } from './AttachmentSection';
 import { CommentThread, type PublicComment } from './CommentThread';
 
@@ -139,6 +140,12 @@ export function RequesterTicketDetail({ requesterId, ticketId, onBack }: Request
           <dt>Last Updated</dt><dd>{formatDate(ticket.updatedAt)}</dd>
         </dl>
       </article>
+      <ActionsTakenPanel
+        ticketId={ticket.id}
+        ticketStatus={ticket.status}
+        ticketCreatedAt={ticket.createdAt}
+        viewer="requester"
+      />
       <AttachmentSection ticketId={ticket.id} requesterId={requesterId} attachments={ticket.attachments} onChanged={() => void loadTicketAndComments()} />
       <CommentThread
         ticketId={ticket.id}
@@ -147,4 +154,4 @@ export function RequesterTicketDetail({ requesterId, ticketId, onBack }: Request
       />
     </main>
   );
-}
+}
