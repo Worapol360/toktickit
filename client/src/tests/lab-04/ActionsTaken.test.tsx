@@ -586,6 +586,171 @@ describe('UI-05: version conflict', () => {
     });
     expect((screen.getByLabelText(/^result/i) as HTMLTextAreaElement).value).toBe('My unsaved result text.');
   });
+
+  it('UI-05: Save without Reload latest resends the same stale expectedVersion and keeps every typed field', async () => {
+    const patchBodies: Array<{ expectedVersion?: number; description?: string; result?: string }> = [];
+    const fetchMock = vi.fn().mockImplementation((url: string, opts?: RequestInit) => {
+      if (url.includes('/actions-taken/22') && opts?.method === 'PATCH') {
+        patchBodies.push(JSON.parse(String(opts.body)) as { expectedVersion?: number; description?: string; result?: string });
+        return Promise.resolve(jsonResponse({
+          error: { code: 'VERSION_CONFLICT', message: 'Stale version at PATCH /api/staff/tickets/101/actions-taken/22', details: { currentVersion: 5 } }
+        }, 409));
+      }
+      if (url.includes('/actions-taken')) return Promise.resolve(jsonResponse(listBody()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderStaff();
+    await waitFor(() => {
+      expect(within(tableDataRow(2)).getByText('Checked the VPN concentrator logs.')).toBeTruthy();
+    });
+
+    fireEvent.click(editButtonOfAction(2));
+    await waitFor(() => {
+      expect((screen.getByLabelText(/^result/i) as HTMLTextAreaElement).value).toBe('No errors found in logs.');
+    });
+    fireEvent.change(screen.getByLabelText(/^description/i), { target: { value: 'Typed description kept through the conflict.' } });
+    fireEvent.change(screen.getByLabelText(/^result/i), { target: { value: 'My unsaved result text.' } });
+    await submitForm();
+
+    const banner = await screen.findByRole('alert');
+    expect(banner.textContent).toContain('This action was changed by someone else. Reload to see the latest version.');
+    expect(banner.textContent).not.toContain('/api/staff');
+    expect(patchBodies).toHaveLength(1);
+    expect(patchBodies[0].expectedVersion).toBe(actionTwo.version);
+    expect((screen.getByLabelText(/^description/i) as HTMLTextAreaElement).value).toBe('Typed description kept through the conflict.');
+    expect((screen.getByLabelText(/^result/i) as HTMLTextAreaElement).value).toBe('My unsaved result text.');
+
+    // Retrying without "Reload latest" must keep sending the stale version instead of adopting the newer one.
+    await submitForm();
+    await waitFor(() => {
+      expect(patchBodies).toHaveLength(2);
+    });
+    expect(patchBodies[1].expectedVersion).toBe(actionTwo.version);
+    expect(patchBodies[1].description).toBe('Typed description kept through the conflict.');
+    expect(patchBodies[1].result).toBe('My unsaved result text.');
+    await waitFor(() => {
+      expect(screen.getByText('This action was changed by someone else. Reload to see the latest version.')).toBeTruthy();
+    });
+    expect((screen.getByLabelText(/^description/i) as HTMLTextAreaElement).value).toBe('Typed description kept through the conflict.');
+    expect((screen.getByLabelText(/^result/i) as HTMLTextAreaElement).value).toBe('My unsaved result text.');
+  });
+
+  it('UI-05: Reload latest sends nothing by itself; only the next explicit Save uses the refreshed version', async () => {
+    const editedAction: ActionTakenDto = {
+      ...actionTwo,
+      version: 5,
+      result: 'Server side newer result.',
+      updatedBy: { id: 7, name: 'Sara Admin' },
+      updatedAt: '2026-10-21T10:00:00.000Z'
+    };
+    let listCalls = 0;
+    let patchCalls = 0;
+    const patchBodies: Array<{ expectedVersion?: number; result?: string }> = [];
+    const fetchMock = vi.fn().mockImplementation((url: string, opts?: RequestInit) => {
+      if (url.includes('/actions-taken/22') && opts?.method === 'PATCH') {
+        patchCalls += 1;
+        const body = JSON.parse(String(opts.body)) as { expectedVersion?: number; result?: string };
+        patchBodies.push(body);
+        if (patchCalls === 1) {
+          return Promise.resolve(jsonResponse({
+            error: { code: 'VERSION_CONFLICT', message: 'Stale version.', details: { currentVersion: 5 } }
+          }, 409));
+        }
+        return Promise.resolve(jsonResponse({
+          actionTaken: {
+            ...editedAction,
+            version: 6,
+            result: body.result ?? editedAction.result,
+            updatedAt: '2026-10-21T10:05:00.000Z'
+          }
+        }, 200));
+      }
+      if (url.includes('/actions-taken')) {
+        listCalls += 1;
+        return Promise.resolve(jsonResponse(listBody(listCalls === 1 ? threeActions : [actionOne, editedAction, actionThree])));
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderStaff();
+    await waitFor(() => {
+      expect(within(tableDataRow(2)).getByText('Checked the VPN concentrator logs.')).toBeTruthy();
+    });
+
+    fireEvent.click(editButtonOfAction(2));
+    await waitFor(() => {
+      expect((screen.getByLabelText(/^result/i) as HTMLTextAreaElement).value).toBe('No errors found in logs.');
+    });
+    fireEvent.change(screen.getByLabelText(/^result/i), { target: { value: 'My unsaved result text.' } });
+    await submitForm();
+
+    const banner = await screen.findByRole('alert');
+    expect(banner.textContent).toContain('This action was changed by someone else. Reload to see the latest version.');
+    expect(patchBodies).toHaveLength(1);
+    expect(patchBodies[0].expectedVersion).toBe(actionTwo.version);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reload latest' }));
+    await waitFor(() => {
+      expect(screen.getAllByText('Server side newer result.').length).toBeGreaterThan(0);
+    });
+    // Re-fetching the latest version must not submit anything on its own.
+    expect(patchBodies).toHaveLength(1);
+    expect((screen.getByLabelText(/^result/i) as HTMLTextAreaElement).value).toBe('My unsaved result text.');
+
+    await submitForm();
+    await waitFor(() => {
+      expect(patchBodies).toHaveLength(2);
+    });
+    expect(patchBodies[1].expectedVersion).toBe(editedAction.version);
+    expect(patchBodies[1].result).toBe('My unsaved result text.');
+    await waitFor(() => {
+      expect(screen.queryByText('This action was changed by someone else. Reload to see the latest version.')).toBeNull();
+    });
+  });
+
+  it('UI-05: Keep editing leaves the form editable with the typed text intact', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string, opts?: RequestInit) => {
+      if (url.includes('/actions-taken/22') && opts?.method === 'PATCH') {
+        return Promise.resolve(jsonResponse({
+          error: { code: 'VERSION_CONFLICT', message: 'Stale version.', details: { currentVersion: 5 } }
+        }, 409));
+      }
+      if (url.includes('/actions-taken')) return Promise.resolve(jsonResponse(listBody()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderStaff();
+    await waitFor(() => {
+      expect(within(tableDataRow(2)).getByText('Checked the VPN concentrator logs.')).toBeTruthy();
+    });
+
+    fireEvent.click(editButtonOfAction(2));
+    await waitFor(() => {
+      expect((screen.getByLabelText(/^result/i) as HTMLTextAreaElement).value).toBe('No errors found in logs.');
+    });
+    fireEvent.change(screen.getByLabelText(/^result/i), { target: { value: 'My unsaved result text.' } });
+    await submitForm();
+
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+    await waitFor(() => {
+      expect(screen.queryByText('This action was changed by someone else. Reload to see the latest version.')).toBeNull();
+    });
+
+    const resultField = screen.getByLabelText(/^result/i) as HTMLTextAreaElement;
+    expect(resultField.value).toBe('My unsaved result text.');
+    expect(resultField.disabled).toBe(false);
+
+    fireEvent.change(resultField, { target: { value: 'My unsaved result text, revised.' } });
+    expect((screen.getByLabelText(/^result/i) as HTMLTextAreaElement).value).toBe('My unsaved result text, revised.');
+
+    const saveButton = screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement;
+    expect(saveButton.disabled).toBe(false);
+  });
 });
 
 describe('UI-06: edit mode and follow-up completion', () => {
@@ -798,6 +963,39 @@ describe('UI-08: locked ticket statuses', () => {
     await waitFor(() => {
       expect(onActionsChanged).toHaveBeenCalled();
     });
+  });
+
+  it('UI-08: 409 TICKET_ACTIONS_LOCKED keeps the typed data and shows no technical detail', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string, opts?: RequestInit) => {
+      if (url.includes('/actions-taken/21') && opts?.method === 'PATCH') {
+        return Promise.resolve(jsonResponse({
+          error: { code: 'TICKET_ACTIONS_LOCKED', message: 'Ticket is locked at /api/staff/tickets/101/actions-taken/21' }
+        }, 409));
+      }
+      if (url.includes('/actions-taken')) return Promise.resolve(jsonResponse(listBody()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderStaff();
+    await waitFor(() => {
+      expect(within(tableDataRow(1)).getByText('Remapped the Finance share on the user laptop.')).toBeTruthy();
+    });
+
+    fireEvent.click(editButtonOfAction(1));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^description/i)).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText(/^description/i), { target: { value: 'Typed description that must survive the lock.' } });
+    fireEvent.change(screen.getByLabelText(/^result/i), { target: { value: 'Typed result that must survive the lock.' } });
+    await submitForm();
+
+    const banner = await screen.findByRole('alert');
+    expect(banner.textContent).toContain("Actions can't be changed while the Ticket is In Progress.");
+    expect(banner.textContent).not.toContain('/api/staff');
+    expect(banner.textContent).not.toContain('Ticket is locked at');
+    expect((screen.getByLabelText(/^description/i) as HTMLTextAreaElement).value).toBe('Typed description that must survive the lock.');
+    expect((screen.getByLabelText(/^result/i) as HTMLTextAreaElement).value).toBe('Typed result that must survive the lock.');
   });
 });
 
