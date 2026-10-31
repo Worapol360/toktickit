@@ -11,6 +11,7 @@ import { actionsTakenListRouter, staffActionsTakenRouter } from './lab-04/action
 import { lockTicketRow } from './lab-04/actions-taken.service.js';
 import { ACTIVE_STATUSES, withAllowedTransitions } from './lab-04/ticket-workflow-rules.js';
 import { changeTicketStatus, parseOptionalExpectedVersion } from './lab-04/ticket-workflow.service.js';
+export { STATUS_TRANSITIONS, isValidStatusTransition } from './lab-04/ticket-status.js';
 import {
   clearSessionCookie,
   csrfGuard,
@@ -51,21 +52,6 @@ export const ALL_STATUSES = [
   'Reopened',
   'Cancelled'
 ] as const;
-
-export const STATUS_TRANSITIONS: Record<string, string[]> = {
-  'New': ['Open', 'Cancelled'],
-  'Open': ['In Progress', 'Cancelled'],
-  'In Progress': ['Waiting for Requester', 'Resolved', 'Cancelled'],
-  'Waiting for Requester': ['In Progress', 'Resolved', 'Cancelled'],
-  'Resolved': ['Closed', 'Reopened'],
-  'Closed': ['Reopened'],
-  'Reopened': ['In Progress', 'Cancelled'],
-  'Cancelled': []
-};
-
-export function isValidStatusTransition(from: string, to: string): boolean {
-  return STATUS_TRANSITIONS[from]?.includes(to) ?? false;
-}
 
 export async function createPublicComment(ticketId: number, authorId: number, rawContent: unknown) {
   const content = typeof rawContent === 'string' ? rawContent.trim() : '';

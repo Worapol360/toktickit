@@ -3,11 +3,11 @@
  * specification.md BR-13, BR-15, BR-16 (D-05, D-06, D-15, D-17) and
  * api-spec.md §2.1, §4.1, §4.5.
  *
- * The transition matrix itself stays in server.ts (STATUS_TRANSITIONS /
- * isValidStatusTransition, unchanged); these functions only read it so the
- * backend keeps a single source of truth and the client keeps none.
+ * The transition matrix lives in the shared ticket-status module; these
+ * functions only read it so the backend keeps a single source of truth and
+ * the client keeps none.
  */
-import { STATUS_TRANSITIONS } from '../server.js';
+import { STATUS_TRANSITIONS } from './ticket-status.js';
 
 /** BR-27 / D-17: statuses counted as "active" by statusGroup=active. */
 export const ACTIVE_STATUSES: readonly string[] = [

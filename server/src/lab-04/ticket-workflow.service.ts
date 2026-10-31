@@ -11,7 +11,7 @@
  */
 import type { Prisma } from '@prisma/client';
 import prisma from '../prisma.js';
-import { isValidStatusTransition } from '../server.js';
+import { isValidStatusTransition } from './ticket-status.js';
 import { evaluateResolutionGate } from './ticket-workflow-rules.js';
 import { lockTicketRow } from './actions-taken.service.js';
 
