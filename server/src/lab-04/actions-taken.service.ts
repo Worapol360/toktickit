@@ -30,6 +30,20 @@ const ACTION_SELECT = {
 
 const LOCKED_STATUSES = ['Resolved', 'Closed', 'Cancelled'];
 
+/**
+ * Shared Ticket row lock (BR-22): SELECT … FOR UPDATE inside the caller's
+ * transaction. Every Lab 4 transaction (Actions Taken create/update and the
+ * Issue 4 status workflow) uses this one helper.
+ */
+export async function lockTicketRow(
+  tx: Prisma.TransactionClient,
+  ticketId: number
+): Promise<Array<{ id: number; status: string; version: number }>> {
+  return tx.$queryRaw<Array<{ id: number; status: string; version: number }>>`
+    SELECT "id", "status", "version" FROM "Ticket" WHERE "id" = ${ticketId} FOR UPDATE
+  `;
+}
+
 export type ActionsTakenFailure =
   | { kind: 'validation'; fields: Record<string, string> }
   | { kind: 'ticket-not-found' }
@@ -86,9 +100,7 @@ export async function createActionTaken(
 
   try {
     return await prisma.$transaction(async (tx) => {
-      const locked = await tx.$queryRaw<Array<{ id: number; status: string }>>`
-        SELECT "id", "status" FROM "Ticket" WHERE "id" = ${ticketId} FOR UPDATE
-      `;
+      const locked = await lockTicketRow(tx, ticketId);
       if (locked.length === 0) {
         return { error: { kind: 'ticket-not-found' } as const };
       }
@@ -208,9 +220,7 @@ export async function patchActionTaken(
   }
 
   return prisma.$transaction(async (tx) => {
-    const locked = await tx.$queryRaw<Array<{ id: number; status: string }>>`
-      SELECT "id", "status" FROM "Ticket" WHERE "id" = ${ticketId} FOR UPDATE
-    `;
+    const locked = await lockTicketRow(tx, ticketId);
     if (locked.length === 0) {
       return { error: { kind: 'ticket-not-found' } as const };
     }

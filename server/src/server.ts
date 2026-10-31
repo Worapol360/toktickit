@@ -8,6 +8,10 @@ import type { Prisma } from '@prisma/client';
 import prisma from './prisma.js';
 import { adminUsersRouter } from './routes/admin-users.js';
 import { actionsTakenListRouter, staffActionsTakenRouter } from './lab-04/actions-taken.routes.js';
+import { lockTicketRow } from './lab-04/actions-taken.service.js';
+import { ACTIVE_STATUSES, withAllowedTransitions } from './lab-04/ticket-workflow-rules.js';
+import { changeTicketStatus, parseOptionalExpectedVersion } from './lab-04/ticket-workflow.service.js';
+export { STATUS_TRANSITIONS, isValidStatusTransition } from './lab-04/ticket-status.js';
 import {
   clearSessionCookie,
   csrfGuard,
@@ -48,21 +52,6 @@ export const ALL_STATUSES = [
   'Reopened',
   'Cancelled'
 ] as const;
-
-export const STATUS_TRANSITIONS: Record<string, string[]> = {
-  'New': ['Open', 'Cancelled'],
-  'Open': ['In Progress', 'Cancelled'],
-  'In Progress': ['Waiting for Requester', 'Resolved', 'Cancelled'],
-  'Waiting for Requester': ['In Progress', 'Resolved', 'Cancelled'],
-  'Resolved': ['Closed', 'Reopened'],
-  'Closed': ['Reopened'],
-  'Reopened': ['In Progress', 'Cancelled'],
-  'Cancelled': []
-};
-
-export function isValidStatusTransition(from: string, to: string): boolean {
-  return STATUS_TRANSITIONS[from]?.includes(to) ?? false;
-}
 
 export async function createPublicComment(ticketId: number, authorId: number, rawContent: unknown) {
   const content = typeof rawContent === 'string' ? rawContent.trim() : '';
@@ -256,7 +245,7 @@ app.get('/api/related-systems', async (_req, res) => {
   }
 });
 
-const ticketQueryParameters = new Set(['search', 'status', 'priority', 'categoryId', 'sortBy', 'sortOrder', 'page', 'pageSize']);
+const ticketQueryParameters = new Set(['search', 'status', 'statusGroup', 'priority', 'categoryId', 'sortBy', 'sortOrder', 'page', 'pageSize']);
 const ticketSortFields = new Set(['createdAt', 'ticketNumber', 'summary', 'requestedPriority', 'status']);
 const ticketSortOrders = new Set(['asc', 'desc']);
 
@@ -287,6 +276,7 @@ app.get('/api/tickets', requireRole('REQUESTER'), async (req, res) => {
 
     const search = queryValue(req.query.search)?.trim() ?? '';
     const status = queryValue(req.query.status)?.trim() ?? '';
+    const statusGroup = queryValue(req.query.statusGroup)?.trim() ?? '';
     const priority = queryValue(req.query.priority)?.trim() ?? '';
     const categoryIdValue = queryValue(req.query.categoryId)?.trim() ?? '';
     const sortByValue = queryValue(req.query.sortBy)?.trim() ?? '';
@@ -302,6 +292,8 @@ app.get('/api/tickets', requireRole('REQUESTER'), async (req, res) => {
     if (page === null) fields.page = 'page must be a positive integer';
     if (pageSize === null || pageSize > 100) fields.pageSize = 'pageSize must be between 1 and 100';
     if (status && status !== 'New') fields.status = 'status must be New';
+    if (statusGroup && statusGroup !== 'active') fields.statusGroup = 'statusGroup must be active';
+    if (statusGroup && status) fields.statusGroup = 'statusGroup cannot be combined with status';
     if (priority && !priorities.has(priority)) fields.priority = 'priority must be Low, Medium, High, or Urgent';
     if (sortByValue && !ticketSortFields.has(sortByValue)) fields.sortBy = 'sortBy is not supported';
     if (sortOrderValue && !ticketSortOrders.has(sortOrderValue)) fields.sortOrder = 'sortOrder must be asc or desc';
@@ -325,6 +317,7 @@ app.get('/api/tickets', requireRole('REQUESTER'), async (req, res) => {
         ]
       } : {}),
       ...(status ? { status } : {}),
+      ...(statusGroup === 'active' ? { status: { in: [...ACTIVE_STATUSES] } } : {}),
       ...(priority ? { requestedPriority: priority } : {}),
       ...(categoryId ? { categoryId } : {})
     };
@@ -770,7 +763,7 @@ app.post('/api/tickets/:id/mark-resolved', requireRole('REQUESTER'), async (req,
 
     const updated = await prisma.ticket.update({
       where: { id },
-      data: { requesterMarkedResolved: true },
+      data: { requesterMarkedResolved: true, version: { increment: 1 } },
       include: { category: true, relatedSystem: true, attachments: true }
     });
 
@@ -802,7 +795,7 @@ app.use('/api/staff/tickets', staffActionsTakenRouter);
 app.get('/api/staff/tickets', async (req, res) => {
   try {
     const allowedParams = new Set([
-      'search', 'status', 'itPriority', 'ownerId', 'categoryId',
+      'search', 'status', 'statusGroup', 'itPriority', 'ownerId', 'categoryId',
       'sortBy', 'sortOrder', 'page', 'pageSize'
     ]);
     const unknownParam = Object.keys(req.query).find((p) => !allowedParams.has(p));
@@ -819,6 +812,7 @@ app.get('/api/staff/tickets', async (req, res) => {
 
     const search = queryValue(req.query.search)?.trim() ?? '';
     const statusVal = queryValue(req.query.status)?.trim() ?? '';
+    const statusGroupVal = queryValue(req.query.statusGroup)?.trim() ?? '';
     const itPriorityVal = queryValue(req.query.itPriority)?.trim() ?? '';
     const ownerIdRaw = queryValue(req.query.ownerId)?.trim() ?? '';
     const categoryIdRaw = queryValue(req.query.categoryId)?.trim() ?? '';
@@ -841,6 +835,8 @@ app.get('/api/staff/tickets', async (req, res) => {
     }
 
     if (statusVal && !staffStatuses.has(statusVal)) fields.status = 'status is not a valid ticket status';
+    if (statusGroupVal && statusGroupVal !== 'active') fields.statusGroup = 'statusGroup must be active';
+    if (statusGroupVal && statusVal) fields.statusGroup = 'statusGroup cannot be combined with status';
     if (itPriorityVal && !priorities.has(itPriorityVal)) fields.itPriority = 'itPriority must be Low, Medium, High, or Urgent';
     if (sortByRaw && !staffSortFields.has(sortByRaw)) fields.sortBy = 'sortBy is not a supported sort field';
     if (sortOrderRaw && !ticketSortOrders.has(sortOrderRaw)) fields.sortOrder = 'sortOrder must be asc or desc';
@@ -877,6 +873,7 @@ app.get('/api/staff/tickets', async (req, res) => {
         ]
       } : {}),
       ...(statusVal ? { status: statusVal } : {}),
+      ...(statusGroupVal === 'active' ? { status: { in: [...ACTIVE_STATUSES] } } : {}),
       ...(itPriorityVal ? { itPriority: itPriorityVal } : {}),
       ...(categoryId ? { categoryId } : {}),
       ...(ownerIdFilter === 'unassigned' ? { ownerId: null }
@@ -906,9 +903,7 @@ app.get('/api/staff/tickets', async (req, res) => {
     const totalPages = totalItems === 0 ? 0 : Math.ceil(totalItems / resolvedPageSize);
 
     res.status(200).json({
-      tickets: tickets.map(({ ...ticket }) => ({
-        ...ticket,
-      })),
+      tickets: tickets.map((ticket) => withAllowedTransitions(ticket)),
       pagination: {
         page: resolvedPage,
         pageSize: resolvedPageSize,
@@ -962,7 +957,7 @@ app.get('/api/staff/tickets/:id', async (req, res) => {
 
     res.status(200).json({
       ticket: {
-        ...ticket,
+        ...withAllowedTransitions(ticket),
         attachments: ticket.attachments.map(safeAttachment)
       },
       comments,
@@ -1037,18 +1032,47 @@ app.patch('/api/staff/tickets/:id/owner', async (req, res) => {
       return;
     }
 
-    const updated = await prisma.ticket.update({
-      where: { id },
-      data: { ownerId },
-      include: {
-        category: true,
-        relatedSystem: true,
-        requester: { select: { id: true, name: true } },
-        owner: { select: { id: true, name: true } }
-      }
-    });
+    const parsedExpectedVersion = parseOptionalExpectedVersion(req.body?.expectedVersion);
+    if (!parsedExpectedVersion.ok) {
+      errorResponse(res, 400, 'VALIDATION_ERROR', 'expectedVersion must be a positive integer.');
+      return;
+    }
 
-    res.status(200).json({ ticket: updated });
+    const include = {
+      category: true,
+      relatedSystem: true,
+      requester: { select: { id: true, name: true } },
+      owner: { select: { id: true, name: true } }
+    };
+    const result = await prisma.$transaction(async (tx) => {
+      const locked = await lockTicketRow(tx, id);
+      if (locked.length === 0) {
+        return { ok: false as const, error: { code: 'TICKET_NOT_FOUND' as const } };
+      }
+      const current = locked[0];
+      if (parsedExpectedVersion.value !== null && current.version !== parsedExpectedVersion.value) {
+        return { ok: false as const, error: { code: 'VERSION_CONFLICT' as const, currentVersion: current.version } };
+      }
+      const updated = await tx.ticket.updateMany({
+        where: { id, version: current.version },
+        data: { ownerId, version: current.version + 1 }
+      });
+      if (updated.count === 0) {
+        const latest = await tx.ticket.findUnique({ where: { id }, select: { version: true } });
+        return { ok: false as const, error: { code: 'VERSION_CONFLICT' as const, currentVersion: latest?.version ?? current.version } };
+      }
+      return { ok: true as const, ticket: await tx.ticket.findUniqueOrThrow({ where: { id }, include }) };
+    });
+    if (!result.ok) {
+      if (result.error.code === 'TICKET_NOT_FOUND') {
+        errorResponse(res, 404, 'TICKET_NOT_FOUND', 'Ticket not found.');
+        return;
+      }
+      errorResponse(res, 409, result.error.code, 'Ticket was updated by someone else.', undefined, { currentVersion: result.error.currentVersion });
+      return;
+    }
+
+    res.status(200).json({ ticket: withAllowedTransitions(result.ticket) });
   } catch {
     errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to update ticket owner.');
   }
@@ -1074,18 +1098,47 @@ app.patch('/api/staff/tickets/:id/priority', async (req, res) => {
       return;
     }
 
-    const updated = await prisma.ticket.update({
-      where: { id },
-      data: { itPriority },
-      include: {
-        category: true,
-        relatedSystem: true,
-        requester: { select: { id: true, name: true } },
-        owner: { select: { id: true, name: true } }
-      }
-    });
+    const parsedExpectedVersion = parseOptionalExpectedVersion(req.body?.expectedVersion);
+    if (!parsedExpectedVersion.ok) {
+      errorResponse(res, 400, 'VALIDATION_ERROR', 'expectedVersion must be a positive integer.');
+      return;
+    }
 
-    res.status(200).json({ ticket: updated });
+    const include = {
+      category: true,
+      relatedSystem: true,
+      requester: { select: { id: true, name: true } },
+      owner: { select: { id: true, name: true } }
+    };
+    const result = await prisma.$transaction(async (tx) => {
+      const locked = await lockTicketRow(tx, id);
+      if (locked.length === 0) {
+        return { ok: false as const, error: { code: 'TICKET_NOT_FOUND' as const } };
+      }
+      const current = locked[0];
+      if (parsedExpectedVersion.value !== null && current.version !== parsedExpectedVersion.value) {
+        return { ok: false as const, error: { code: 'VERSION_CONFLICT' as const, currentVersion: current.version } };
+      }
+      const updated = await tx.ticket.updateMany({
+        where: { id, version: current.version },
+        data: { itPriority, version: current.version + 1 }
+      });
+      if (updated.count === 0) {
+        const latest = await tx.ticket.findUnique({ where: { id }, select: { version: true } });
+        return { ok: false as const, error: { code: 'VERSION_CONFLICT' as const, currentVersion: latest?.version ?? current.version } };
+      }
+      return { ok: true as const, ticket: await tx.ticket.findUniqueOrThrow({ where: { id }, include }) };
+    });
+    if (!result.ok) {
+      if (result.error.code === 'TICKET_NOT_FOUND') {
+        errorResponse(res, 404, 'TICKET_NOT_FOUND', 'Ticket not found.');
+        return;
+      }
+      errorResponse(res, 409, result.error.code, 'Ticket was updated by someone else.', undefined, { currentVersion: result.error.currentVersion });
+      return;
+    }
+
+    res.status(200).json({ ticket: withAllowedTransitions(result.ticket) });
   } catch {
     errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to update ticket priority.');
   }
@@ -1111,23 +1164,37 @@ app.patch('/api/staff/tickets/:id/status', async (req, res) => {
       return;
     }
 
-    if (!isValidStatusTransition(ticket.status, status)) {
-      errorResponse(res, 409, 'INVALID_STATUS_TRANSITION', `Status transition from ${ticket.status} to ${status} is not permitted.`);
+    const result = await changeTicketStatus(id, status, req.body?.expectedVersion);
+    if ('error' in result) {
+      const failure = result.error;
+      switch (failure.kind) {
+        case 'validation':
+          errorResponse(res, 400, 'VALIDATION_ERROR', 'expectedVersion must be a positive integer.');
+          return;
+        case 'ticket-not-found':
+          errorResponse(res, 404, 'TICKET_NOT_FOUND', 'Ticket not found.');
+          return;
+        case 'version-conflict':
+          errorResponse(res, 409, 'VERSION_CONFLICT', 'Ticket was updated by someone else.', undefined, { currentVersion: failure.currentVersion });
+          return;
+        case 'invalid-transition':
+          errorResponse(res, 409, 'INVALID_STATUS_TRANSITION', `Status transition from ${failure.from} to ${failure.to} is not permitted.`);
+          return;
+        case 'resolution-blocked':
+          errorResponse(res, 409, 'RESOLUTION_BLOCKED',
+            failure.reason === 'NO_ACTIONS_TAKEN'
+              ? 'Resolve needs at least one Action Taken.'
+              : `Resolve needs all follow-ups completed; ${failure.openFollowUps} open.`,
+            undefined,
+            { reason: failure.reason, openFollowUps: failure.openFollowUps });
+          return;
+        default:
+          errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to update ticket status.');
+      }
       return;
     }
 
-    const updated = await prisma.ticket.update({
-      where: { id },
-      data: { status },
-      include: {
-        category: true,
-        relatedSystem: true,
-        requester: { select: { id: true, name: true } },
-        owner: { select: { id: true, name: true } }
-      }
-    });
-
-    res.status(200).json({ ticket: updated });
+    res.status(200).json({ ticket: withAllowedTransitions(result.ticket) });
   } catch {
     errorResponse(res, 500, 'INTERNAL_ERROR', 'Unable to update ticket status.');
   }

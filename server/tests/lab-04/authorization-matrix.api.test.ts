@@ -295,6 +295,203 @@ describe('Authorization matrix for Actions Taken endpoints (AUTH-01, AUTH-02)', 
     expect(after!.version).toBe(before!.version);
     expect(after!.result).toBe(before!.result);
   });
+
+  // ── Lab 4, Issue 4: status / owner / priority rows of api-spec.md §7 ──────
+
+  async function nonOwnerStaffAgent() {
+    const u = await prisma.user.upsert({
+      where: { emailNormalized: 'a4m_staff2@example.com' },
+      update: { name: 'A4 Matrix Staff 2', role: 'IT_STAFF', department: 'IT', passwordHash: localPasswordHash, mustChangePassword: false, isActive: true },
+      create: {
+        name: 'A4 Matrix Staff 2',
+        email: 'a4m_staff2@example.com',
+        emailNormalized: 'a4m_staff2@example.com',
+        department: 'IT',
+        role: 'IT_STAFF',
+        passwordHash: localPasswordHash,
+        mustChangePassword: false,
+        isActive: true
+      }
+    });
+    const login = agentFor(u.email);
+    await login.ready;
+    return login.agent;
+  }
+
+  it('AUTH-01: PATCH /api/staff/tickets/:id/status matches the role matrix (anonymous 401, Requesters 403, staff/admin 200)', async () => {
+    const before = await prisma.ticket.findUnique({ where: { id: ticketId } });
+
+    const anonymous = await request(app)
+      .patch(`/api/staff/tickets/${ticketId}/status`)
+      .set(csrf, 'XMLHttpRequest')
+      .send({ status: 'In Progress' });
+    expect(anonymous.status).toBe(401);
+    expect(anonymous.body.error.code).toBe('UNAUTHENTICATED');
+
+    const owner = agentFor(ownerRequester.email);
+    await owner.ready;
+    const asOwner = await owner.agent
+      .patch(`/api/staff/tickets/${ticketId}/status`)
+      .set(csrf, 'XMLHttpRequest')
+      .send({ status: 'In Progress' });
+    expect(asOwner.status).toBe(403);
+    expect(asOwner.body.error.code).toBe('FORBIDDEN');
+
+    const other = agentFor(otherRequester.email);
+    await other.ready;
+    const asOther = await other.agent
+      .patch(`/api/staff/tickets/${ticketId}/status`)
+      .set(csrf, 'XMLHttpRequest')
+      .send({ status: 'In Progress' });
+    expect(asOther.status).toBe(403);
+    expect(asOther.body.error.code).toBe('FORBIDDEN');
+
+    const afterDenied = await prisma.ticket.findUnique({ where: { id: ticketId } });
+    expect(afterDenied).toEqual(before); // rejected callers never change the Ticket
+
+    // Non-owner active IT Staff may change status (BR-14: not owner-only).
+    const staff2 = await nonOwnerStaffAgent();
+    const asStaff = await staff2
+      .patch(`/api/staff/tickets/${ticketId}/status`)
+      .set(csrf, 'XMLHttpRequest')
+      .send({ status: 'In Progress' });
+    expect(asStaff.status).toBe(200);
+    expect(asStaff.body.ticket.status).toBe('In Progress');
+    expect(asStaff.body.ticket.version).toBe(before!.version + 1);
+
+    const admin = agentFor(adminUser.email);
+    await admin.ready;
+    const asAdmin = await admin.agent
+      .patch(`/api/staff/tickets/${ticketId}/status`)
+      .set(csrf, 'XMLHttpRequest')
+      .send({ status: 'Waiting for Requester', expectedVersion: asStaff.body.ticket.version });
+    expect(asAdmin.status).toBe(200);
+    expect(asAdmin.body.ticket.status).toBe('Waiting for Requester');
+  });
+
+  it('AUTH-01: PATCH /api/staff/tickets/:id/owner matches the role matrix (non-owner IT Staff and Administrator succeed, BR-14)', async () => {
+    const before = await prisma.ticket.findUnique({ where: { id: ticketId } });
+
+    const anonymous = await request(app)
+      .patch(`/api/staff/tickets/${ticketId}/owner`)
+      .set(csrf, 'XMLHttpRequest')
+      .send({ ownerId: adminUser.id });
+    expect(anonymous.status).toBe(401);
+
+    const owner = agentFor(ownerRequester.email);
+    await owner.ready;
+    const asOwner = await owner.agent
+      .patch(`/api/staff/tickets/${ticketId}/owner`)
+      .set(csrf, 'XMLHttpRequest')
+      .send({ ownerId: adminUser.id });
+    expect(asOwner.status).toBe(403);
+    expect(asOwner.body.error.code).toBe('FORBIDDEN');
+
+    const other = agentFor(otherRequester.email);
+    await other.ready;
+    const asOther = await other.agent
+      .patch(`/api/staff/tickets/${ticketId}/owner`)
+      .set(csrf, 'XMLHttpRequest')
+      .send({ ownerId: adminUser.id });
+    expect(asOther.status).toBe(403);
+    expect(asOther.body.error.code).toBe('FORBIDDEN');
+
+    const afterDenied = await prisma.ticket.findUnique({ where: { id: ticketId } });
+    expect(afterDenied).toEqual(before);
+
+    const staff2 = await nonOwnerStaffAgent();
+    const asStaff = await staff2
+      .patch(`/api/staff/tickets/${ticketId}/owner`)
+      .set(csrf, 'XMLHttpRequest')
+      .send({ ownerId: adminUser.id });
+    expect(asStaff.status).toBe(200);
+    expect(asStaff.body.ticket.ownerId).toBe(adminUser.id);
+    expect(asStaff.body.ticket.version).toBe(before!.version + 1);
+
+    const admin = agentFor(adminUser.email);
+    await admin.ready;
+    const asAdmin = await admin.agent
+      .patch(`/api/staff/tickets/${ticketId}/owner`)
+      .set(csrf, 'XMLHttpRequest')
+      .send({ ownerId: staffUser.id, expectedVersion: asStaff.body.ticket.version });
+    expect(asAdmin.status).toBe(200);
+    expect(asAdmin.body.ticket.ownerId).toBe(staffUser.id);
+  });
+
+  it('AUTH-01: PATCH /api/staff/tickets/:id/priority matches the role matrix (non-owner IT Staff and Administrator succeed, BR-14)', async () => {
+    const before = await prisma.ticket.findUnique({ where: { id: ticketId } });
+
+    const anonymous = await request(app)
+      .patch(`/api/staff/tickets/${ticketId}/priority`)
+      .set(csrf, 'XMLHttpRequest')
+      .send({ itPriority: 'Urgent' });
+    expect(anonymous.status).toBe(401);
+
+    const owner = agentFor(ownerRequester.email);
+    await owner.ready;
+    const asOwner = await owner.agent
+      .patch(`/api/staff/tickets/${ticketId}/priority`)
+      .set(csrf, 'XMLHttpRequest')
+      .send({ itPriority: 'Urgent' });
+    expect(asOwner.status).toBe(403);
+    expect(asOwner.body.error.code).toBe('FORBIDDEN');
+
+    const other = agentFor(otherRequester.email);
+    await other.ready;
+    const asOther = await other.agent
+      .patch(`/api/staff/tickets/${ticketId}/priority`)
+      .set(csrf, 'XMLHttpRequest')
+      .send({ itPriority: 'Urgent' });
+    expect(asOther.status).toBe(403);
+    expect(asOther.body.error.code).toBe('FORBIDDEN');
+
+    const afterDenied = await prisma.ticket.findUnique({ where: { id: ticketId } });
+    expect(afterDenied).toEqual(before);
+
+    const staff2 = await nonOwnerStaffAgent();
+    const asStaff = await staff2
+      .patch(`/api/staff/tickets/${ticketId}/priority`)
+      .set(csrf, 'XMLHttpRequest')
+      .send({ itPriority: 'Urgent' });
+    expect(asStaff.status).toBe(200);
+    expect(asStaff.body.ticket.itPriority).toBe('Urgent');
+    expect(asStaff.body.ticket.version).toBe(before!.version + 1);
+
+    const admin = agentFor(adminUser.email);
+    await admin.ready;
+    const asAdmin = await admin.agent
+      .patch(`/api/staff/tickets/${ticketId}/priority`)
+      .set(csrf, 'XMLHttpRequest')
+      .send({ itPriority: 'High', expectedVersion: asStaff.body.ticket.version });
+    expect(asAdmin.status).toBe(200);
+    expect(asAdmin.body.ticket.itPriority).toBe('High');
+  });
+
+  it('AUTH-02: PATCH …/status, …/owner and …/priority without the CSRF header are rejected before any DB change', async () => {
+    const staff = agentFor(staffUser.email);
+    await staff.ready;
+    const before = await prisma.ticket.findUnique({ where: { id: ticketId } });
+
+    const statusRes = await staff.agent
+      .patch(`/api/staff/tickets/${ticketId}/status`)
+      .send({ status: 'In Progress' });
+    const ownerRes = await staff.agent
+      .patch(`/api/staff/tickets/${ticketId}/owner`)
+      .send({ ownerId: adminUser.id });
+    const priorityRes = await staff.agent
+      .patch(`/api/staff/tickets/${ticketId}/priority`)
+      .send({ itPriority: 'Urgent' });
+
+    expect(statusRes.status).toBe(403);
+    expect(statusRes.body.error.code).toBe('CSRF_CHECK_FAILED');
+    expect(ownerRes.status).toBe(403);
+    expect(ownerRes.body.error.code).toBe('CSRF_CHECK_FAILED');
+    expect(priorityRes.status).toBe(403);
+    expect(priorityRes.body.error.code).toBe('CSRF_CHECK_FAILED');
+
+    const after = await prisma.ticket.findUnique({ where: { id: ticketId } });
+    expect(after).toEqual(before);
+  });
 });
 
 function postAs(agent: request.SuperAgentTest, url: string) {

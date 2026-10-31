@@ -17,6 +17,10 @@ const mockTicket = {
   requestedPriority: 'High',
   itPriority: 'High',
   status: 'Open',
+  version: 1,
+  resolvedAt: null,
+  // Lab 4 / api-spec 2.1 + BR-13: staff tickets carry the server-computed matrix.
+  allowedTransitions: ['In Progress', 'Cancelled'],
   requesterMarkedResolved: false,
   requesterId: 1,
   requester: { id: 1, name: 'Alice Requester', email: 'alice@example.com', department: 'Sales' },
@@ -84,37 +88,46 @@ describe('StaffTicketDetail Component (UI-04, UI-05, STYLE-02)', () => {
     expect(prioritySelect).toBeTruthy();
     expect(prioritySelect.value).toBe('High');
 
-    // Status select showing disabled options with reasons
+    // Status select: Issue 4 lists only the server-provided next transitions, so the
+    // current status is shown in the header badge and the select exposes the
+    // first server-provided transition until the user chooses another target.
     const statusSelect = screen.getByLabelText(/status/i) as HTMLSelectElement;
     expect(statusSelect).toBeTruthy();
-    expect(statusSelect.value).toBe('Open');
+    expect(document.querySelector('.status-badge')?.textContent).toBe('Open');
+    expect(statusSelect.value).toBe('In Progress');
 
-    // From Open, permitted is In Progress and Cancelled. New, Resolved, Closed should be disabled.
+    // From Open, only In Progress and Cancelled are offered. New, Resolved and Closed
+    // are no longer rendered at all, which is strictly stronger than a disabled option.
     const options = Array.from(statusSelect.options);
     const newOption = options.find((o) => o.value === 'New');
     const inProgressOption = options.find((o) => o.value === 'In Progress');
     const closedOption = options.find((o) => o.value === 'Closed');
 
-    expect(newOption?.disabled).toBe(true);
+    expect(newOption).toBeUndefined();
     expect(inProgressOption?.disabled).toBe(false);
-    expect(closedOption?.disabled).toBe(true);
+    expect(closedOption).toBeUndefined();
   });
 
   it('UI-04: allows claiming a ticket and updating priority and status', async () => {
     const fetchMock = vi.fn().mockImplementation((url: string, opts?: RequestInit) => {
       if (url.includes('/api/staff/tickets/101/owner') && opts?.method === 'PATCH') {
         return Promise.resolve(jsonResponse({
-          ticket: { ...mockTicket, ownerId: 2, owner: { id: 2, name: 'Bob IT Staff' } }
+          ticket: { ...mockTicket, ownerId: 2, owner: { id: 2, name: 'Bob IT Staff' }, version: 2 }
         }));
       }
       if (url.includes('/api/staff/tickets/101/priority') && opts?.method === 'PATCH') {
         return Promise.resolve(jsonResponse({
-          ticket: { ...mockTicket, itPriority: 'Urgent' }
+          ticket: { ...mockTicket, itPriority: 'Urgent', version: 3 }
         }));
       }
       if (url.includes('/api/staff/tickets/101/status') && opts?.method === 'PATCH') {
         return Promise.resolve(jsonResponse({
-          ticket: { ...mockTicket, status: 'In Progress' }
+          ticket: {
+            ...mockTicket,
+            status: 'In Progress',
+            version: 4,
+            allowedTransitions: ['Waiting for Requester', 'Resolved', 'Cancelled']
+          }
         }));
       }
       if (url.includes('/api/staff/tickets/101')) {
@@ -142,9 +155,13 @@ describe('StaffTicketDetail Component (UI-04, UI-05, STYLE-02)', () => {
         expect.objectContaining({
           method: 'PATCH',
           headers: expect.objectContaining({ 'X-Requested-With': 'XMLHttpRequest' }),
-          body: JSON.stringify({ ownerId: 2 })
+          body: JSON.stringify({ ownerId: 2, expectedVersion: 1 })
         })
       );
+    });
+    // The owner response (version 2) must be applied before the priority step.
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /claim/i })).toBeNull();
     });
 
     // 2. Change IT Priority
@@ -157,14 +174,20 @@ describe('StaffTicketDetail Component (UI-04, UI-05, STYLE-02)', () => {
         expect.objectContaining({
           method: 'PATCH',
           headers: expect.objectContaining({ 'X-Requested-With': 'XMLHttpRequest' }),
-          body: JSON.stringify({ itPriority: 'Urgent' })
+          body: JSON.stringify({ itPriority: 'Urgent', expectedVersion: 2 })
         })
       );
     });
+    // The priority response must be applied before the status step sends version 3.
+    await waitFor(() => {
+      expect((screen.getByLabelText(/it priority/i) as HTMLSelectElement).value).toBe('Urgent');
+    });
 
-    // 3. Change Status to In Progress
+    // 3. Change Status to In Progress (Issue 4: select, then Update status;
+    // Open -> In Progress is not a confirmation pair per ui-spec section 5)
     const statusSelect = screen.getByLabelText(/status/i);
     fireEvent.change(statusSelect, { target: { value: 'In Progress' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update status' }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -172,7 +195,7 @@ describe('StaffTicketDetail Component (UI-04, UI-05, STYLE-02)', () => {
         expect.objectContaining({
           method: 'PATCH',
           headers: expect.objectContaining({ 'X-Requested-With': 'XMLHttpRequest' }),
-          body: JSON.stringify({ status: 'In Progress' })
+          body: JSON.stringify({ status: 'In Progress', expectedVersion: 3 })
         })
       );
     });

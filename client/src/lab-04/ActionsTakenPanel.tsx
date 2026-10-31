@@ -47,6 +47,8 @@ export type ActionsTakenPanelProps = {
   viewer: Viewer;
   currentUserName?: string;
   onActionsChanged?: () => void;
+  onSummaryChange?: (summary: { total: number; openFollowUps: number }) => void;
+  reloadToken?: number;
 };
 
 type LoadState = 'loading' | 'ready' | 'forbidden' | 'notfound' | 'error';
@@ -109,7 +111,9 @@ export function ActionsTakenPanel({
   ticketCreatedAt,
   viewer,
   currentUserName,
-  onActionsChanged
+  onActionsChanged,
+  onSummaryChange,
+  reloadToken
 }: ActionsTakenPanelProps) {
   const auth = useOptionalAuth();
   const userName = currentUserName ?? auth?.user?.name ?? '';
@@ -133,6 +137,9 @@ export function ActionsTakenPanel({
 
   const addButtonRef = useRef<HTMLButtonElement | null>(null);
 
+  const summaryCallbackRef = useRef(onSummaryChange);
+  summaryCallbackRef.current = onSummaryChange;
+
   const locked = LOCKED_STATUSES.includes(ticketStatus);
   const staffCanWrite = viewer === 'staff' && !locked;
   const actions = list.actionsTaken;
@@ -146,6 +153,7 @@ export function ActionsTakenPanel({
         if (cancelled) return;
         setList(next);
         setLoadState('ready');
+        summaryCallbackRef.current?.(next.summary);
       } catch (err) {
         if (cancelled) return;
         if (err instanceof ActionsApiError && err.status === 403) setLoadState('forbidden');
@@ -155,7 +163,7 @@ export function ActionsTakenPanel({
     };
     void load();
     return () => { cancelled = true; };
-  }, [ticketId, refreshToken]);
+  }, [ticketId, refreshToken, reloadToken]);
 
   useEffect(() => {
     if (highlightId == null) return;
