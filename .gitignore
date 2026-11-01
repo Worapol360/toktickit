@@ -32,9 +32,6 @@ coverage/
 *.sqlite3
 *.db
 
-# Package manager lockfiles
-package-lock.json
-
 # Prisma generated output (not generated yet for Issue 1)
 # Prisma client generation is not committed in this starter scope.
 
