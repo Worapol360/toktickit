@@ -25,6 +25,31 @@ button {
 .status-badge { background: #eaf6f7; color: #176b87; }
 .ticket-cards { display: none; }
 .pagination { justify-content: center; margin-top: 20px; }
+.filter-chips { display: flex; flex-wrap: wrap; gap: 8px; flex-basis: 100%; }
+.filter-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--color-border); border-radius: 999px; padding: 5px 10px; background: var(--color-surface-tint); color: var(--color-primary); }
+.filter-chip button { min-width: 24px; min-height: 24px; padding: 0; border: 0; background: transparent; color: inherit; }
+.dashboard-page { max-width: 1200px; margin: 32px auto; }
+.dashboard-heading { display: flex; justify-content: space-between; gap: 16px; align-items: start; margin-bottom: 24px; }
+.dashboard-heading h1, .dashboard-heading p { margin: 0; }
+.dashboard-grid { display: grid; gap: 16px; }
+.dashboard-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 24px; }
+.dashboard-panels { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 24px 0; }
+.dashboard-card, .dashboard-panel, .dashboard-state { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; padding: 20px; }
+.dashboard-card-label { margin: 0 0 8px; color: var(--color-muted-text); font-weight: 600; }
+.dashboard-card-value { display: block; font-size: 32px; }
+.dashboard-link, .dashboard-ticket-link { min-width: 0; border: 0; padding: 4px 0; background: transparent; color: var(--color-primary); text-decoration: underline; cursor: pointer; }
+.dashboard-panel h2 { margin-top: 0; }
+.dashboard-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.dashboard-list li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 10px; }
+.dashboard-list li span:not(.badge) { flex: 1 1 220px; overflow-wrap: anywhere; }
+.dashboard-empty { color: var(--color-muted-text); font-style: italic; }
+.dashboard-tile-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.dashboard-tile { border: 1px solid var(--color-border); border-radius: 8px; padding: 14px; display: grid; gap: 6px; }
+.dashboard-tile strong { font-size: 24px; }
+.dashboard-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.dashboard-state { text-align: center; }
+@media (max-width: 991px) { .dashboard-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dashboard-panels { grid-template-columns: 1fr; } .dashboard-tile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 767px) { .dashboard-page { margin: 16px 0; } .dashboard-heading { display: grid; } .dashboard-metrics, .dashboard-tile-grid { grid-template-columns: 1fr; } .dashboard-actions button { width: 100%; } }
 @media (max-width: 991px) { .my-tickets-page { padding: 0 24px; } .ticket-filters label { flex: 1 1 220px; } }
 @media (max-width: 767px) { .my-tickets-page { padding: 0 16px; } .my-tickets-heading { display: grid; } .primary-action { width: 100%; } .tickets-table { display: none; } .ticket-cards { display: grid; gap: 16px; } .ticket-card { border: 1px solid #d7e2dc; border-radius: 8px; padding: 16px; overflow-wrap: anywhere; } .ticket-card h2 { margin-top: 0; font-size: 18px; } .ticket-card dl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } .ticket-card dt { font-weight: 600; } .ticket-card dd { margin: 0; } .ticket-card button { width: 100%; margin-top: 12px; } }
 
@@ -105,3 +130,245 @@ button {
   overflow: auto;
 }
 .dialog-panel h2 { margin-top: 0; margin-bottom: 16px; }
+
+/* ---------------------------------------------------------------------------
+   Zen Green design tokens (docs/lab-04/ui-spec.md §1).
+   Shared neutrals already used across Labs 1–3 are included so new components
+   can reference them instead of repeating hex values. No other hex values may
+   appear in Lab 4 component files.
+   --------------------------------------------------------------------------- */
+:root {
+  --color-primary: #006B3C;
+  --color-on-primary: #FFFFFF;
+  --color-bg: #F6FAF8;
+  --color-text: #17221C;
+  --color-surface: #FFFFFF;
+  --color-surface-tint: #EAF6EF;
+  --color-border: #D7E2DC;
+  --color-muted-text: #556960;
+  /* NEW Lab 4 tokens */
+  --color-warning-bg: #FFF4D6;
+  --color-warning-text: #5C3D00;
+  --color-danger: #B3261E;
+  --color-danger-bg: #FDECEA;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Lab 4 — Actions Taken panel */
+.actions-panel {
+  margin-top: 32px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 24px;
+  color: var(--color-text);
+}
+.actions-panel :focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.actions-panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.actions-panel-header h2 { margin: 0; font-size: 20px; }
+.actions-count { color: var(--color-muted-text); font-size: 14px; }
+.actions-shared-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--color-surface-tint);
+  color: var(--color-primary);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.actions-tz-label { color: var(--color-muted-text); font-size: 13px; }
+.actions-viewer-note { color: var(--color-muted-text); font-size: 14px; }
+.actions-locked-note {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  border-radius: 6px;
+  padding: 10px 16px;
+  font-weight: 600;
+  margin: 0 0 16px;
+}
+.actions-empty { color: var(--color-muted-text); font-style: italic; }
+.actions-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.actions-table th,
+.actions-table td {
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.actions-cards { display: none; }
+.actions-card {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px;
+  overflow-wrap: anywhere;
+  background: var(--color-surface);
+}
+.actions-card dl {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin: 0;
+}
+.actions-card dt { font-weight: 600; }
+.actions-card dd { margin: 0; }
+.actions-row-highlight { background: var(--color-surface-tint); }
+.actions-edited-marker {
+  display: block;
+  font-size: 13px;
+  color: var(--color-muted-text);
+  font-style: italic;
+  margin-top: 4px;
+}
+.followup-open {
+  color: var(--color-warning-text);
+  background: var(--color-warning-bg);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-weight: 600;
+}
+.followup-done {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+.actions-row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.actions-form {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.actions-form h3 { margin-top: 0; }
+.actions-form-grid { display: grid; gap: 16px; }
+.actions-field label,
+.actions-field-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.actions-required-marker { font-weight: 400; color: var(--color-muted-text); font-size: 13px; }
+.actions-field input[type='datetime-local'],
+.actions-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  font-size: 14px;
+  font-family: inherit;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.actions-field input[aria-invalid='true'],
+.actions-field textarea[aria-invalid='true'] {
+  border-color: var(--color-danger);
+}
+.actions-field-checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.actions-field-hint { color: var(--color-muted-text); font-size: 13px; margin: 4px 0 0; }
+.actions-field-error { color: var(--color-danger); font-size: 13px; font-weight: 600; margin: 4px 0 0; }
+.actions-counter { display: block; text-align: right; font-size: 12px; color: var(--color-muted-text); margin-top: 2px; }
+.actions-performed-by { margin: 0; font-weight: 600; }
+.actions-error-summary {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+.actions-error-summary ul { margin: 8px 0 0; padding-left: 20px; }
+.actions-banner {
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+.actions-banner p { margin: 0 0 8px; }
+.actions-banner p:last-child { margin-bottom: 0; }
+.actions-banner-conflict { background: var(--color-warning-bg); color: var(--color-warning-text); }
+.actions-banner-error { background: var(--color-danger-bg); color: var(--color-danger); }
+.actions-conflict-latest {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+.actions-conflict-latest dl {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+  margin: 8px 0 0;
+}
+.actions-conflict-latest dt { font-weight: 600; }
+.actions-conflict-latest dd { margin: 0; }
+.actions-banner-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.actions-form-buttons { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+.actions-btn {
+  min-width: auto;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: var(--color-surface);
+  color: var(--color-text);
+  min-height: 40px;
+}
+.actions-btn-primary {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border-color: var(--color-primary);
+}
+.actions-btn-secondary { border-color: var(--color-border); }
+.actions-btn-small { padding: 4px 12px; min-height: 32px; }
+.actions-btn:disabled { cursor: not-allowed; opacity: 0.7; }
+.actions-skeleton-row {
+  height: 18px;
+  border-radius: 6px;
+  background: var(--color-surface-tint);
+  margin-bottom: 12px;
+}
+.actions-failure-region { margin-bottom: 16px; }
+
+/* Actions Taken follows the Lab 3 table ↔ cards breakpoint (768px).
+   Recorded in the Issue 3 PR per ui-spec §6. */
+@media (max-width: 767px) {
+  .actions-table { display: none; }
+  .actions-cards { display: grid; gap: 16px; }
+  .actions-btn { width: 100%; min-height: 44px; }
+  .actions-row-actions { flex-direction: column; }
+  .actions-form-buttons { flex-direction: column; }
+}

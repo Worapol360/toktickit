@@ -26,8 +26,22 @@ export function safeUser(user: { id: number; name: string; email: string; role: 
   };
 }
 
-function errorResponse(response: Response, status: number, code: string, message: string, fields?: Record<string, string>) {
-  response.status(status).json({ error: { code, message, ...(fields ? { fields } : {}) } });
+function errorResponse(
+  response: Response,
+  status: number,
+  code: string,
+  message: string,
+  fields?: Record<string, string>,
+  details?: Record<string, unknown>
+) {
+  response.status(status).json({
+    error: {
+      code,
+      message,
+      ...(fields ? { fields } : {}),
+      ...(details ? { details } : {})
+    }
+  });
 }
 
 function tokenHash(token: string) {

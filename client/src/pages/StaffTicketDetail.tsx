@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+
+import { ActionsTakenPanel } from '../lab-04/ActionsTakenPanel';
 import { AttachmentSection, type Attachment } from './AttachmentSection';
 import { CommentThread, type PublicComment } from './CommentThread';
 import { InternalNotesSection, type InternalNote } from './InternalNotesSection';
@@ -16,6 +18,9 @@ type Ticket = {
   requestedPriority: string;
   itPriority?: string | null;
   status: string;
+  version: number;
+  resolvedAt?: string | null;
+  allowedTransitions?: string[];
   requesterMarkedResolved?: boolean;
   requester?: { id: number; name: string; email?: string; department?: string } | null;
   ownerId?: number | null;
@@ -27,29 +32,18 @@ type Ticket = {
   updatedAt: string;
 };
 
-const ALL_STATUSES = [
-  'New',
-  'Open',
-  'In Progress',
-  'Waiting for Requester',
-  'Resolved',
-  'Closed',
-  'Reopened',
-  'Cancelled'
-];
+const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
 
-const PERMITTED_TRANSITIONS: Record<string, string[]> = {
-  'New': ['Open', 'Cancelled'],
-  'Open': ['In Progress', 'Cancelled'],
-  'In Progress': ['Waiting for Requester', 'Resolved', 'Cancelled'],
-  'Waiting for Requester': ['In Progress', 'Resolved', 'Cancelled'],
-  'Resolved': ['Closed', 'Reopened'],
-  'Closed': ['Reopened'],
-  'Reopened': ['In Progress', 'Cancelled'],
-  'Cancelled': []
+const CONFIRM_VERBS: Record<string, string> = {
+  Resolved: 'Mark as Resolved',
+  Cancelled: 'Cancel Ticket',
+  Closed: 'Close Ticket',
+  Reopened: 'Reopen Ticket'
 };
 
-const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
+function needsConfirmation(from: string, to: string): boolean {
+  return to === 'Cancelled' || to === 'Resolved' || to === 'Reopened' || (from === 'Resolved' && to === 'Closed');
+}
 
 type StaffTicketDetailProps = {
   ticketId: number;
@@ -75,15 +69,29 @@ export function StaffTicketDetail({ ticketId, currentUserId, onBack }: StaffTick
   const [showReassign, setShowReassign] = useState(false);
   const [staffUsers, setStaffUsers] = useState<UserOption[]>([]);
   const [selectedReassignUser, setSelectedReassignUser] = useState<string>('');
+  const [selectedStatus, setSelectedStatus] = useState('');
+  const [statusAlert, setStatusAlert] = useState('');
+  const [statusAnnouncement, setStatusAnnouncement] = useState('');
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [actionsSummary, setActionsSummary] = useState({ total: 0, openFollowUps: 0 });
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const [panelReloadToken, setPanelReloadToken] = useState(0);
+  const updateStatusButtonRef = useRef<HTMLButtonElement | null>(null);
+  const statusSelectRef = useRef<HTMLSelectElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const confirmButtonRef = useRef<HTMLButtonElement | null>(null);
+  const dialogWasOpenRef = useRef(false);
 
-  const loadTicketData = async () => {
-    setLoading(true);
-    setError('');
-    setNotFound(false);
+  const loadTicketData = async (quiet = false) => {
+    if (!quiet) {
+      setLoading(true);
+      setError('');
+      setNotFound(false);
+    }
     try {
       const response = await fetch(`/api/staff/tickets/${ticketId}`, { credentials: 'same-origin' });
       if (response.status === 404) {
-        setNotFound(true);
+        if (!quiet) setNotFound(true);
         return;
       }
       const body = await response.json();
@@ -93,16 +101,77 @@ export function StaffTicketDetail({ ticketId, currentUserId, onBack }: StaffTick
       setTicket(body.ticket);
       setComments(body.comments ?? []);
       setNotes(body.notes ?? []);
+      if (quiet) setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load ticket details.');
     } finally {
-      setLoading(false);
+      if (!quiet) setLoading(false);
     }
   };
 
   useEffect(() => {
     void loadTicketData();
   }, [ticketId]);
+
+  // Conflicted status changes reload the Ticket + actions; the PATCH is never re-sent.
+  useEffect(() => {
+    if (reloadNonce === 0) return;
+    void loadTicketData(true);
+    setPanelReloadToken((token) => token + 1);
+  }, [reloadNonce]);
+
+  // Focus returns to the control that opened the confirmation dialog.
+  useEffect(() => {
+    if (confirmOpen) {
+      dialogWasOpenRef.current = true;
+      confirmButtonRef.current?.focus();
+      return;
+    }
+    if (dialogWasOpenRef.current) {
+      dialogWasOpenRef.current = false;
+      updateStatusButtonRef.current?.focus();
+    }
+  }, [confirmOpen]);
+
+  // A controlled select with an empty value keeps the browser's selection otherwise;
+  // clear it when nothing is selected (initial state, after success or a conflict reload).
+  useEffect(() => {
+    const node = statusSelectRef.current;
+    if (node && selectedStatus === '' && node.selectedIndex !== -1) {
+      node.selectedIndex = -1;
+    }
+  }, [selectedStatus, ticket]);
+
+  const handleSummaryChange = (summary: { total: number; openFollowUps: number }) => {
+    setActionsSummary((prev) =>
+      prev.total === summary.total && prev.openFollowUps === summary.openFollowUps ? prev : summary
+    );
+  };
+
+  const handleReloadAfterConflict = (message: string) => {
+    setStatusAlert(message);
+    setSelectedStatus('');
+    setSelectedReassignUser('');
+    setConfirmOpen(false);
+    setReloadNonce((nonce) => nonce + 1);
+  };
+
+  const refreshTicketMeta = async () => {
+    try {
+      const response = await fetch(`/api/staff/tickets/${ticketId}`, { credentials: 'same-origin' });
+      if (!response.ok) return;
+      const body = await response.json();
+      if (body.ticket) {
+        setTicket((prev) => prev ? {
+          ...prev,
+          status: body.ticket.status ?? prev.status,
+          updatedAt: body.ticket.updatedAt ?? prev.updatedAt
+        } : prev);
+      }
+    } catch {
+      // Best effort: keep the currently displayed summary.
+    }
+  };
 
   const handleClaim = async () => {
     if (!ticket || !currentUserId) return;
@@ -116,10 +185,14 @@ export function StaffTicketDetail({ ticketId, currentUserId, onBack }: StaffTick
           'X-Requested-With': 'XMLHttpRequest'
         },
         credentials: 'same-origin',
-        body: JSON.stringify({ ownerId: currentUserId })
+        body: JSON.stringify({ ownerId: currentUserId, expectedVersion: ticket.version })
       });
       const body = await res.json();
       if (!res.ok || !body.ticket) {
+        if (res.status === 409 && body.error?.code === 'VERSION_CONFLICT') {
+          handleReloadAfterConflict('This ticket was updated by someone else. Reloaded the latest version.');
+          return;
+        }
         throw new Error(body.error?.message ?? 'Failed to claim ticket.');
       }
       setTicket((prev) => prev ? { ...prev, ...body.ticket } : prev);
@@ -158,10 +231,14 @@ export function StaffTicketDetail({ ticketId, currentUserId, onBack }: StaffTick
           'X-Requested-With': 'XMLHttpRequest'
         },
         credentials: 'same-origin',
-        body: JSON.stringify({ ownerId: Number(selectedReassignUser) })
+        body: JSON.stringify({ ownerId: Number(selectedReassignUser), expectedVersion: ticket.version })
       });
       const body = await res.json();
       if (!res.ok || !body.ticket) {
+        if (res.status === 409 && body.error?.code === 'VERSION_CONFLICT') {
+          handleReloadAfterConflict('This ticket was updated by someone else. Reloaded the latest version.');
+          return;
+        }
         throw new Error(body.error?.message ?? 'Failed to reassign ticket.');
       }
       setTicket((prev) => prev ? { ...prev, ...body.ticket } : prev);
@@ -185,13 +262,17 @@ export function StaffTicketDetail({ ticketId, currentUserId, onBack }: StaffTick
           'X-Requested-With': 'XMLHttpRequest'
         },
         credentials: 'same-origin',
-        body: JSON.stringify({ itPriority: newPriority })
+        body: JSON.stringify({ itPriority: newPriority, expectedVersion: ticket.version })
       });
       const body = await res.json();
       if (!res.ok || !body.ticket) {
+        if (res.status === 409 && body.error?.code === 'VERSION_CONFLICT') {
+          handleReloadAfterConflict('This ticket was updated by someone else. Reloaded the latest version.');
+          return;
+        }
         throw new Error(body.error?.message ?? 'Failed to update IT Priority.');
       }
-      setTicket((prev) => prev ? { ...prev, itPriority: body.ticket.itPriority } : prev);
+      setTicket((prev) => prev ? { ...prev, ...body.ticket } : prev);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to update IT Priority.');
     } finally {
@@ -199,10 +280,15 @@ export function StaffTicketDetail({ ticketId, currentUserId, onBack }: StaffTick
     }
   };
 
-  const handleStatusChange = async (newStatus: string) => {
-    if (!ticket) return;
+  const handleStatusSelectChange = (value: string) => {
+    setSelectedStatus(value);
+    setStatusAlert('');
+  };
+
+  const performStatusChange = async (newStatus: string) => {
+    if (!ticket || !newStatus) return;
     setSavingStatus(true);
-    setActionError('');
+    setStatusAlert('');
     try {
       const res = await fetch(`/api/staff/tickets/${ticket.id}/status`, {
         method: 'PATCH',
@@ -211,17 +297,93 @@ export function StaffTicketDetail({ ticketId, currentUserId, onBack }: StaffTick
           'X-Requested-With': 'XMLHttpRequest'
         },
         credentials: 'same-origin',
-        body: JSON.stringify({ status: newStatus })
+        body: JSON.stringify({ status: newStatus, expectedVersion: ticket.version })
       });
       const body = await res.json();
-      if (!res.ok || !body.ticket) {
-        throw new Error(body.error?.message ?? 'Failed to update status.');
+      if (res.ok && body.ticket) {
+        setTicket(body.ticket as Ticket);
+        setSelectedStatus('');
+        setStatusAlert('');
+        setStatusAnnouncement(`Status changed to ${body.ticket.status}.`);
+        return;
       }
-      setTicket((prev) => prev ? { ...prev, status: body.ticket.status } : prev);
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to update status.');
+      const code = body.error?.code as string | undefined;
+      const details = (body.error?.details ?? {}) as { reason?: string; openFollowUps?: number };
+      if (code === 'RESOLUTION_BLOCKED') {
+        setStatusAlert(
+          details.reason === 'OPEN_FOLLOW_UPS'
+            ? `Complete ${details.openFollowUps ?? 0} open follow-up(s) before resolving.`
+            : 'Record at least one action before resolving.'
+        );
+        setConfirmOpen(false);
+        return;
+      }
+      if (code === 'INVALID_STATUS_TRANSITION') {
+        handleReloadAfterConflict('That status change is no longer allowed. The ticket may have changed — reloaded.');
+        return;
+      }
+      if (code === 'VERSION_CONFLICT') {
+        handleReloadAfterConflict('This ticket was updated by someone else. Reloaded the latest version.');
+        return;
+      }
+      setStatusAlert(body.error?.message ?? 'Failed to update status.');
+      setConfirmOpen(false);
+    } catch {
+      setStatusAlert('Failed to update status.');
+      setConfirmOpen(false);
     } finally {
       setSavingStatus(false);
+    }
+  };
+
+  const handleUpdateStatus = () => {
+    if (!ticket || !selectedStatus) return;
+    if (needsConfirmation(ticket.status, selectedStatus)) {
+      setStatusAlert('');
+      setConfirmOpen(true);
+      return;
+    }
+    void performStatusChange(selectedStatus);
+  };
+
+  const handleCancelConfirm = () => {
+    setConfirmOpen(false);
+  };
+
+  const handleConfirmStatusChange = () => {
+    const newStatus = selectedStatus;
+    setConfirmOpen(false);
+    void performStatusChange(newStatus);
+  };
+
+  const handleConfirmKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      event.stopPropagation();
+      setConfirmOpen(false);
+      return;
+    }
+    if (event.key === 'Tab') {
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      const focusables = Array.from(
+        dialog.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (!active || !dialog.contains(active)) {
+        event.preventDefault();
+        first.focus();
+        return;
+      }
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
   };
 
@@ -229,14 +391,37 @@ export function StaffTicketDetail({ ticketId, currentUserId, onBack }: StaffTick
   if (notFound) return <main aria-label="Staff ticket detail"><h1>Ticket not found</h1><p>The requested ticket does not exist.</p><button type="button" onClick={onBack}>Back to Queue</button></main>;
   if (error || !ticket) return <main aria-label="Staff ticket detail"><div role="alert">{error || 'Unable to load ticket.'}</div><button type="button" onClick={() => void loadTicketData()}>Retry</button><button type="button" onClick={onBack}>Back to Queue</button></main>;
 
-  const allowedNextStatuses = PERMITTED_TRANSITIONS[ticket.status] ?? [];
+  // Missing (field absent) is a load/contract failure; an empty array is a valid
+  // "no transitions left" state (D-15: only the server computes the matrix).
+  const transitionsFromServer = ticket.allowedTransitions;
+  const allowedTransitionsMissing = !Array.isArray(transitionsFromServer);
+  const allowedNextStatuses: string[] = Array.isArray(transitionsFromServer) ? transitionsFromServer : [];
+  const gateBlocked =
+    selectedStatus === 'Resolved' && (actionsSummary.total === 0 || actionsSummary.openFollowUps > 0);
+  const gateMessage =
+    actionsSummary.total === 0
+      ? 'Record at least one action before resolving.'
+      : `Complete ${actionsSummary.openFollowUps} open follow-up(s) before resolving.`;
 
   return (
     <main aria-label="Staff ticket detail">
       <button type="button" onClick={onBack} style={{ marginBottom: 16 }}>Back to Queue</button>
 
       <article style={{ background: '#FFFFFF', border: '1px solid #D7E2DC', borderRadius: 8, padding: 24, marginBottom: 24 }}>
-        <h1>{ticket.ticketNumber}</h1>
+        <h1>
+          {ticket.ticketNumber}{' '}
+          <span className="badge status-badge">{ticket.status}</span>
+        </h1>
+
+        {ticket.requesterMarkedResolved && (
+          <p>
+            <span className="badge requester-resolved-badge">
+              <span aria-hidden="true">✔</span> Requester reports resolved
+            </span>
+          </p>
+        )}
+
+        <p role="status">{statusAnnouncement}</p>
 
         {actionError && (
           <div role="alert" style={{ background: '#FDECEC', color: '#B42318', padding: '10px 16px', borderRadius: 6, marginBottom: 16 }}>
@@ -370,32 +555,139 @@ export function StaffTicketDetail({ ticketId, currentUserId, onBack }: StaffTick
           {/* Status control */}
           <div>
             <label htmlFor="ticket-status-select" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>
-              Status
+              Change status
             </label>
-            <select
-              id="ticket-status-select"
-              aria-label="Status"
-              value={ticket.status}
-              onChange={(e) => handleStatusChange(e.target.value)}
-              disabled={savingStatus}
-              style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #D7E2DC', fontWeight: 600 }}
-            >
-              {ALL_STATUSES.map((statusName) => {
-                const isCurrent = statusName === ticket.status;
-                const isAllowed = isCurrent || allowedNextStatuses.includes(statusName);
-                return (
-                  <option
-                    key={statusName}
-                    value={statusName}
-                    disabled={!isAllowed}
+            {allowedTransitionsMissing ? (
+              <p>
+                Status options are unavailable. Please reload.{' '}
+                <button
+                  type="button"
+                  onClick={() => void loadTicketData(true)}
+                  style={{
+                    background: '#FFFFFF',
+                    color: '#17221C',
+                    border: '1px solid #D7E2DC',
+                    borderRadius: 6,
+                    padding: '4px 10px',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Reload
+                </button>
+              </p>
+            ) : allowedNextStatuses.length === 0 ? (
+              <span>No further status changes are possible.</span>
+            ) : (
+              <>
+                <select
+                  id="ticket-status-select"
+                  ref={statusSelectRef}
+                  aria-label="Change status"
+                  value={selectedStatus}
+                  onChange={(e) => handleStatusSelectChange(e.target.value)}
+                  style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #D7E2DC', fontWeight: 600 }}
+                >
+                  {allowedNextStatuses.map((statusName) => (
+                    <option key={statusName} value={statusName}>
+                      {statusName}
+                    </option>
+                  ))}
+                </select>
+                <div style={{ marginTop: 8 }}>
+                  <button
+                    type="button"
+                    ref={updateStatusButtonRef}
+                    onClick={handleUpdateStatus}
+                    disabled={savingStatus || gateBlocked}
+                    aria-describedby={gateBlocked ? 'resolve-gate-help' : undefined}
+                    style={{
+                      background: '#006B3C',
+                      color: '#FFFFFF',
+                      border: 'none',
+                      borderRadius: 6,
+                      padding: '6px 14px',
+                      fontWeight: 600,
+                      cursor: savingStatus || gateBlocked ? 'not-allowed' : 'pointer'
+                    }}
                   >
-                    {statusName}{!isAllowed ? ` (Not permitted from ${ticket.status})` : ''}
-                  </option>
-                );
-              })}
-            </select>
+                    {savingStatus ? 'Updating...' : 'Update status'}
+                  </button>
+                  {gateBlocked && (
+                    <p id="resolve-gate-help" style={{ margin: '6px 0 0', fontSize: 13, color: '#B42318' }}>
+                      {gateMessage}
+                    </p>
+                  )}
+                </div>
+                {statusAlert && (
+                  <div role="alert" style={{ marginTop: 8, background: '#FDECEC', color: '#B42318', padding: '8px 12px', borderRadius: 6 }}>
+                    {statusAlert}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </section>
+
+        {confirmOpen && selectedStatus && ticket && (
+          <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="status-confirm-title"
+            tabIndex={-1}
+            onKeyDown={handleConfirmKeyDown}
+            style={{
+              marginTop: 16,
+              background: '#FFFFFF',
+              border: '1px solid #D7E2DC',
+              borderRadius: 8,
+              padding: 20
+            }}
+          >
+            <h2 id="status-confirm-title" style={{ marginTop: 0 }}>
+              Change status from {ticket.status} to {selectedStatus}?
+            </h2>
+            <p>
+              {selectedStatus === 'Resolved'
+                ? 'The requester will see the ticket as resolved. You can reopen it later.'
+                : 'This changes what the requester and staff see in the queue.'}
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={handleCancelConfirm}
+                style={{
+                  background: '#FFFFFF',
+                  color: '#17221C',
+                  border: '1px solid #D7E2DC',
+                  borderRadius: 6,
+                  padding: '6px 14px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                ref={confirmButtonRef}
+                onClick={handleConfirmStatusChange}
+                style={{
+                  background: '#006B3C',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: 6,
+                  padding: '6px 14px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                {CONFIRM_VERBS[selectedStatus] ?? 'Confirm'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Ticket Metadata */}
         <dl>
@@ -410,6 +702,16 @@ export function StaffTicketDetail({ ticketId, currentUserId, onBack }: StaffTick
           <dt>Last Updated</dt><dd>{formatDate(ticket.updatedAt)}</dd>
         </dl>
       </article>
+
+      <ActionsTakenPanel
+        ticketId={ticket.id}
+        ticketStatus={ticket.status}
+        ticketCreatedAt={ticket.createdAt}
+        viewer="staff"
+        onActionsChanged={() => void refreshTicketMeta()}
+        onSummaryChange={handleSummaryChange}
+        reloadToken={panelReloadToken}
+      />
 
       <AttachmentSection ticketId={ticket.id} requesterId={String(ticket.requester?.id ?? '')} attachments={ticket.attachments} onChanged={() => void loadTicketData()} />
 

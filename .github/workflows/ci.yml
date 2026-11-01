@@ -1,0 +1,144 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - lab4-staging
+  push:
+    branches:
+      - lab4-staging
+
+permissions:
+  contents: read
+
+jobs:
+  client:
+    name: Client tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install client dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Run client tests
+        working-directory: client
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee ../client-test.log
+
+      - name: Build client
+        working-directory: client
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee ../client-build.log
+
+      - name: Upload client logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-test-logs-client
+          path: |
+            client-test.log
+            client-build.log
+          if-no-files-found: warn
+
+  server:
+    name: Server tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/toktickit_test?schema=public
+      NODE_ENV: test
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: toktickit_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d toktickit_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install server dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Generate Prisma client
+        working-directory: server
+        run: npx prisma generate
+
+      - name: Configure test environment
+        working-directory: server
+        shell: bash
+        run: |
+          printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env.test
+          printf 'ATTACHMENT_STORAGE_PATH=./storage/attachments\n' >> .env.test
+
+      - name: Apply committed migrations
+        working-directory: server
+        shell: bash
+        run: |
+          set -o pipefail
+          npx prisma migrate deploy 2>&1 | tee ../server-migrate.log
+
+      - name: Seed test database
+        working-directory: server
+        shell: bash
+        run: |
+          set -o pipefail
+          NODE_ENV=production npm run prisma:seed 2>&1 | tee ../server-seed.log
+
+      - name: Run server tests
+        working-directory: server
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee ../server-test.log
+
+      - name: Build server
+        working-directory: server
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee ../server-build.log
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-test-logs-server
+          path: |
+            server-migrate.log
+            server-seed.log
+            server-test.log
+            server-build.log
+          if-no-files-found: warn

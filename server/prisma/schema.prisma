@@ -39,6 +39,8 @@ model User {
   publicComments     PublicComment[]
   internalNotes      InternalNote[]
   sessions           Session[]
+  actionsPerformed   ActionTaken[]    @relation("ActionsPerformed")
+  actionsUpdated     ActionTaken[]    @relation("ActionsUpdated")
 
   @@index([role])
   @@map("requester_user")
@@ -86,11 +88,16 @@ model Ticket {
   attachments             Attachment[]
   publicComments          PublicComment[]
   internalNotes           InternalNote[]
+  actionsTaken            ActionTaken[]
   createdAt               DateTime        @default(now())
   updatedAt               DateTime        @updatedAt
+  resolvedAt              DateTime?
+  version                 Int             @default(1)
 
   @@index([requesterId, createdAt(sort: Desc)])
+  @@index([requesterId, status])
   @@index([ownerId, status])
+  @@index([status, updatedAt(sort: Desc)])
 }
 
 model Attachment {
@@ -125,5 +132,31 @@ model InternalNote {
   createdAt DateTime @default(now())
   ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   author    User     @relation(fields: [authorId], references: [id])
+}
+
+model ActionTaken {
+  id                Int       @id @default(autoincrement())
+  ticketId          Int
+  actionAt          DateTime
+  description       String
+  result            String
+  followUpRequired  Boolean   @default(false)
+  followUpNote      String?
+  followUpCompletedAt DateTime?
+  attachmentNotes   String?
+  clientRequestId   String?
+  version           Int       @default(1)
+  performedById     Int
+  updatedById       Int?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  ticket            Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  performedBy       User      @relation("ActionsPerformed", fields: [performedById], references: [id])
+  updatedBy         User?     @relation("ActionsUpdated", fields: [updatedById], references: [id])
+
+  @@unique([ticketId, clientRequestId])
+  @@index([ticketId, createdAt, id])
+  @@index([performedById, followUpRequired, followUpCompletedAt])
+  @@map("action_taken")
 }
 
