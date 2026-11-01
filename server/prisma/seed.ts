@@ -118,6 +118,15 @@ async function main() {
     });
   }
 
+  await prisma.$queryRaw`
+    SELECT setval(
+      pg_get_serial_sequence('"requester_user"', 'id'),
+      COALESCE(MAX("id"), 1),
+      MAX("id") IS NOT NULL
+    )
+    FROM "requester_user"
+  `;
+
   for (const relatedSystem of relatedSystems) {
     await prisma.relatedSystem.upsert({ where: { code: relatedSystem.code }, update: { name: relatedSystem.name, isActive: true }, create: relatedSystem });
   }
