@@ -89,12 +89,12 @@ describe('StaffTicketDetail Component (UI-04, UI-05, STYLE-02)', () => {
     expect(prioritySelect.value).toBe('High');
 
     // Status select: Issue 4 lists only the server-provided next transitions, so the
-    // current status is shown in the header badge and the select exposes the
-    // first server-provided transition until the user chooses another target.
+    // current status is shown in the header badge and the select starts with no
+    // pending target selection until the user chooses one of the allowed transitions.
     const statusSelect = screen.getByLabelText(/status/i) as HTMLSelectElement;
     expect(statusSelect).toBeTruthy();
     expect(document.querySelector('.status-badge')?.textContent).toBe('Open');
-    expect(statusSelect.value).toBe('In Progress');
+    expect(statusSelect.value).toBe('');
 
     // From Open, only In Progress and Cancelled are offered. New, Resolved and Closed
     // are no longer rendered at all, which is strictly stronger than a disabled option.
