@@ -8,6 +8,7 @@ import type { Prisma } from '@prisma/client';
 import prisma from './prisma.js';
 import { adminUsersRouter } from './routes/admin-users.js';
 import { actionsTakenListRouter, staffActionsTakenRouter } from './lab-04/actions-taken.routes.js';
+import { dashboardRouter } from './lab-04/dashboard.routes.js';
 import { lockTicketRow } from './lab-04/actions-taken.service.js';
 import { ACTIVE_STATUSES, withAllowedTransitions } from './lab-04/ticket-workflow-rules.js';
 import { changeTicketStatus, parseOptionalExpectedVersion } from './lab-04/ticket-workflow.service.js';
@@ -52,6 +53,10 @@ export const ALL_STATUSES = [
   'Reopened',
   'Cancelled'
 ] as const;
+
+// All 8 statuses are valid `status=` filter values on the requester list
+// (Lab 4 drill-downs link to /?status=Waiting for Requester and /?status=Resolved).
+const requesterTicketStatuses = new Set<string>(ALL_STATUSES);
 
 export async function createPublicComment(ticketId: number, authorId: number, rawContent: unknown) {
   const content = typeof rawContent === 'string' ? rawContent.trim() : '';
@@ -119,11 +124,20 @@ async function removeStoredFiles(paths: string[]) {
   }));
 }
 
-app.get('/api/health', (_req, res) => {
-  res.status(200).json({
-    status: 'ok',
-    service: 'TokTickIT API'
-  });
+app.get('/api/health', async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.status(200).json({
+      status: 'ok',
+      database: 'up',
+      time: new Date().toISOString()
+    });
+  } catch {
+    res.status(503).json({
+      status: 'degraded',
+      database: 'down'
+    });
+  }
 });
 
 app.post('/api/auth/login', async (req, res) => {
@@ -291,7 +305,7 @@ app.get('/api/tickets', requireRole('REQUESTER'), async (req, res) => {
     if (categoryId === null) fields.categoryId = 'categoryId must be a positive integer';
     if (page === null) fields.page = 'page must be a positive integer';
     if (pageSize === null || pageSize > 100) fields.pageSize = 'pageSize must be between 1 and 100';
-    if (status && status !== 'New') fields.status = 'status must be New';
+    if (status && !requesterTicketStatuses.has(status)) fields.status = 'status is not a valid ticket status';
     if (statusGroup && statusGroup !== 'active') fields.statusGroup = 'statusGroup must be active';
     if (statusGroup && status) fields.statusGroup = 'statusGroup cannot be combined with status';
     if (priority && !priorities.has(priority)) fields.priority = 'priority must be Low, Medium, High, or Urgent';
@@ -1268,6 +1282,10 @@ app.post('/api/staff/tickets/:id/notes', async (req, res) => {
 // Apply auth + password-complete + role guard to all /api/admin/users/* routes
 app.use('/api/admin/users', requireAuth, requirePasswordChangeComplete, requireRole('ADMINISTRATOR'), adminUsersRouter);
 
+
+// ─── Dashboards (Lab 4, Issue 5) ─────────────────────────────────────────────
+// Per-route role gates live inside the router (never router-wide).
+app.use('/api/dashboard', dashboardRouter);
 
 // ─── Infrastructure ───────────────────────────────────────────────────────────
 

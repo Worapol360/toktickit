@@ -69,6 +69,7 @@ const statuses = [
 ];
 
 const priorities = ['Low', 'Medium', 'High', 'Urgent'];
+const allowedStatusValues = new Set(statuses);
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString();
@@ -87,6 +88,7 @@ export function StaffTicketQueue({
   const [search, setSearch] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
   const [status, setStatus] = useState('');
+  const [statusGroup, setStatusGroup] = useState('');
   const [itPriority, setItPriority] = useState('');
   const [ownerId, setOwnerId] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -129,6 +131,8 @@ export function StaffTicketQueue({
 
     if (status) {
       params.set('status', status);
+    } else if (statusGroup) {
+      params.set('statusGroup', statusGroup);
     }
 
     if (itPriority) {
@@ -225,6 +229,21 @@ export function StaffTicketQueue({
     void loadCategories().catch(() => {
       setError('Unable to load categories.');
     });
+    const applyQueryFilters = () => {
+      const query = new URLSearchParams(window.location.search);
+      const queryStatus = query.get('status') ?? '';
+      const queryPriority = query.get('itPriority') ?? '';
+      const queryOwner = query.get('ownerId') ?? '';
+      const nextStatus = allowedStatusValues.has(queryStatus) ? queryStatus : '';
+      setStatus(nextStatus);
+      setStatusGroup(query.get('statusGroup') === 'active' && !nextStatus ? 'active' : '');
+      setItPriority(priorities.includes(queryPriority) ? queryPriority : '');
+      setOwnerId(queryOwner === 'unassigned' || /^\d+$/.test(queryOwner) ? queryOwner : '');
+      setPage(1);
+    };
+    applyQueryFilters();
+    window.addEventListener('popstate', applyQueryFilters);
+    return () => window.removeEventListener('popstate', applyQueryFilters);
   }, []);
 
   useEffect(() => {
@@ -234,6 +253,7 @@ export function StaffTicketQueue({
   }, [
     appliedSearch,
     status,
+    statusGroup,
     itPriority,
     ownerId,
     categoryId,
@@ -246,6 +266,7 @@ export function StaffTicketQueue({
   const hasActiveFilters = Boolean(
     appliedSearch.trim() ||
       status ||
+        statusGroup ||
       itPriority ||
       ownerId ||
       categoryId,
@@ -276,6 +297,7 @@ export function StaffTicketQueue({
     value: string,
   ) => {
     setter(value);
+    if (setter === setStatus && value) setStatusGroup('');
     setPage(1);
   };
 
@@ -283,6 +305,7 @@ export function StaffTicketQueue({
     setSearch('');
     setAppliedSearch('');
     setStatus('');
+    setStatusGroup('');
     setItPriority('');
     setOwnerId('');
     setCategoryId('');
@@ -307,6 +330,12 @@ export function StaffTicketQueue({
         onSubmit={submitSearch}
         aria-label="Ticket filters"
       >
+        {(status || statusGroup || itPriority || ownerId) && <div className="filter-chips" aria-label="Active filters">
+          {statusGroup && <span className="filter-chip">Active tickets <button type="button" aria-label="Remove active status filter" onClick={() => { window.history.replaceState({}, '', '/staff/tickets'); setStatusGroup(''); setPage(1); }}>×</button></span>}
+          {status && <span className="filter-chip">Status: {status} <button type="button" aria-label="Remove status filter" onClick={() => { window.history.replaceState({}, '', '/staff/tickets'); setStatus(''); setPage(1); }}>×</button></span>}
+          {itPriority && <span className="filter-chip">IT Priority: {itPriority}</span>}
+          {ownerId && <span className="filter-chip">Owner: {ownerId === 'unassigned' ? 'Unassigned' : ownerId}</span>}
+        </div>}
         <label>
           Search tickets
           <input

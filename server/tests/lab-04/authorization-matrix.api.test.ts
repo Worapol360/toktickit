@@ -2,25 +2,63 @@
  * AUTH-01 (Actions Taken rows of api-spec.md §7) and AUTH-02 (missing CSRF header
  * on every new mutating endpoint) for Lab 4, Issue 2.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { app } from '../../src/server.js';
 import prisma from '../../src/prisma.js';
+import { restoreUsers, snapshotUsers, trackLoginSession, type FixtureSessionTracker } from './fixture-cleanup.js';
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 const localPasswordHash = '$2b$12$MvQuSTNtpiuJmfaKc7j0Nu0FipBQuY31F6ojkIMWw2OMTZoK5lUkq';
 const SUMMARY_PREFIX = '[A4-AUTH]';
 const csrf = 'X-Requested-With';
+const FIXTURE_EMAILS = [
+  'a4m_req1@example.com',
+  'a4m_req2@example.com',
+  'a4m_staff@example.com',
+  'a4m_staff2@example.com',
+  'a4m_admin@example.com',
+  'a4m_pwc@example.com'
+];
+const sessionIds: FixtureSessionTracker = new Set();
 
 function agentFor(email: string) {
   const agent = request.agent(app);
   const ready = agent
     .post('/api/auth/login')
     .set(csrf, 'XMLHttpRequest')
-    .send({ email, password: 'LocalOnly1!' });
+    .send({ email, password: 'LocalOnly1!' })
+    .then(async (response) => {
+      if (response.status === 200) await trackLoginSession(prisma, response, sessionIds);
+      return response;
+    });
   return { agent, ready };
+}
+
+// Dashboard rows cache their sessions (logged in once in beforeAll): bcrypt
+// compares are CPU-only and this file already performs many logins — reuse
+// keeps the full suite's CPU load within the budget of Lab 3's 5 s tests.
+const dashboardSessions = new Map<string, Promise<request.SuperAgentTest>>();
+
+async function dashboardAgentFor(email: string): Promise<request.SuperAgentTest> {
+  const cached = dashboardSessions.get(email);
+  if (cached) return cached;
+  const login = (async () => {
+    const agent = request.agent(app);
+    const response = await agent
+      .post('/api/auth/login')
+      .set(csrf, 'XMLHttpRequest')
+      .send({ email, password: 'LocalOnly1!' });
+    if (response.status !== 200) {
+      throw new Error(`Login as ${email} failed with ${response.status}: ${JSON.stringify(response.body)}`);
+    }
+    await trackLoginSession(prisma, response, sessionIds);
+    return agent;
+  })();
+  dashboardSessions.set(email, login);
+  return login;
 }
 
 function validCreateBody(overrides: Record<string, unknown> = {}) {
@@ -39,6 +77,7 @@ describe('Authorization matrix for Actions Taken endpoints (AUTH-01, AUTH-02)', 
   let staffUser: { id: number; email: string };
   let adminUser: { id: number; email: string };
   let ticketId: number;
+  let userSnapshots: Awaited<ReturnType<typeof snapshotUsers>>;
 
   async function cleanupFixtures() {
     await prisma.actionTaken.deleteMany({
@@ -48,6 +87,10 @@ describe('Authorization matrix for Actions Taken endpoints (AUTH-01, AUTH-02)', 
       where: { summary: { startsWith: SUMMARY_PREFIX } }
     });
   }
+
+  beforeAll(async () => {
+    userSnapshots = await snapshotUsers(prisma, FIXTURE_EMAILS);
+  });
 
   beforeEach(async () => {
     const cat = await prisma.category.findFirst({ where: { isActive: true } });
@@ -141,6 +184,11 @@ describe('Authorization matrix for Actions Taken endpoints (AUTH-01, AUTH-02)', 
 
   afterEach(async () => {
     await cleanupFixtures();
+  });
+
+  afterAll(async () => {
+    await cleanupFixtures();
+    await restoreUsers(prisma, FIXTURE_EMAILS, userSnapshots, sessionIds);
   });
 
   it('AUTH-01: GET /api/tickets/:id/actions-taken matches the role matrix', async () => {
@@ -491,6 +539,145 @@ describe('Authorization matrix for Actions Taken endpoints (AUTH-01, AUTH-02)', 
 
     const after = await prisma.ticket.findUnique({ where: { id: ticketId } });
     expect(after).toEqual(before);
+  });
+
+  // ── Lab 4, Issue 5: dashboard / health rows of api-spec.md §7 ─────────────
+  // Nested describe: its beforeAll runs only after the rows above have
+  // finished, so the Lab 1–3 rows keep their original timing (an eager
+  // file-level pre-warm would delay them into Lab 3's cross-file sweeps),
+  // while the dashboard sessions below are still warmed once, right before
+  // the dashboard rows that use them.
+  describe('dashboard and health rows (Issue 5)', () => {
+    beforeAll(async () => {
+      const specs = [
+        { email: 'a4m_req1@example.com', name: 'A4 Matrix Requester', role: 'REQUESTER' as const, department: 'Support' },
+        { email: 'a4m_req2@example.com', name: 'A4 Matrix Other Requester', role: 'REQUESTER' as const, department: 'Operations' },
+        { email: 'a4m_staff@example.com', name: 'A4 Matrix Staff', role: 'IT_STAFF' as const, department: 'IT' },
+        { email: 'a4m_admin@example.com', name: 'A4 Matrix Admin', role: 'ADMINISTRATOR' as const, department: 'IT' }
+      ];
+      for (const spec of specs) {
+        await prisma.user.upsert({
+          where: { emailNormalized: spec.email },
+          update: { name: spec.name, role: spec.role, department: spec.department, passwordHash: localPasswordHash, mustChangePassword: false, isActive: true },
+          create: {
+            name: spec.name,
+            email: spec.email,
+            emailNormalized: spec.email,
+            department: spec.department,
+            role: spec.role,
+            passwordHash: localPasswordHash,
+            mustChangePassword: false,
+            isActive: true
+          }
+        });
+        await dashboardAgentFor(spec.email);
+      }
+    });
+
+    it('AUTH-01: GET /api/dashboard/requester matches the role matrix (401/200/200/403/403)', async () => {
+      const admin = await dashboardAgentFor(adminUser.email);
+      const staff = await dashboardAgentFor(staffUser.email);
+      const owner = await dashboardAgentFor(ownerRequester.email);
+      const other = await dashboardAgentFor(otherRequester.email);
+
+      const anonymous = await request(app).get('/api/dashboard/requester');
+      const asAdmin = await admin.get('/api/dashboard/requester');
+      const asStaff = await staff.get('/api/dashboard/requester');
+      const asOwner = await owner.get('/api/dashboard/requester');
+      const asOther = await other.get('/api/dashboard/requester');
+
+      expect(anonymous.status).toBe(401);
+      expect(anonymous.body.error.code).toBe('UNAUTHENTICATED');
+      expect(asOwner.status).toBe(200);
+      expect(asOther.status).toBe(200);
+      expect(asStaff.status).toBe(403);
+      expect(asStaff.body.error.code).toBe('FORBIDDEN');
+      expect(asAdmin.status).toBe(403);
+      expect(asAdmin.body.error.code).toBe('FORBIDDEN');
+
+      // Requester payloads carry metrics and lists only — never user counts.
+      expect(asOwner.body).toHaveProperty('metrics');
+      expect(asOwner.body).toHaveProperty('needsAttention');
+      expect(asOwner.body).not.toHaveProperty('users');
+      expect(asOther.body).not.toHaveProperty('users');
+    });
+
+    it('AUTH-01: GET /api/dashboard/staff matches the role matrix (401/403/403/200/200+users)', async () => {
+      const admin = await dashboardAgentFor(adminUser.email);
+      const staff = await dashboardAgentFor(staffUser.email);
+      const owner = await dashboardAgentFor(ownerRequester.email);
+      const other = await dashboardAgentFor(otherRequester.email);
+
+      const anonymous = await request(app).get('/api/dashboard/staff');
+      const asAdmin = await admin.get('/api/dashboard/staff');
+      const asStaff = await staff.get('/api/dashboard/staff');
+      const asOwner = await owner.get('/api/dashboard/staff');
+      const asOther = await other.get('/api/dashboard/staff');
+
+      expect(anonymous.status).toBe(401);
+      expect(anonymous.body.error.code).toBe('UNAUTHENTICATED');
+      expect(asOwner.status).toBe(403);
+      expect(asOwner.body.error.code).toBe('FORBIDDEN');
+      expect(asOther.status).toBe(403);
+      expect(asOther.body.error.code).toBe('FORBIDDEN');
+      expect(asStaff.status).toBe(200);
+      expect(asAdmin.status).toBe(200);
+
+      // Matrix: +users only for Administrator; structurally absent for IT Staff.
+      expect(asAdmin.body).toHaveProperty('users');
+      expect(asStaff.body).not.toHaveProperty('users');
+    });
+
+    it('AUTH-01: GET /api/health is public — every role and anonymous callers get 200', async () => {
+      const owner = await dashboardAgentFor(ownerRequester.email);
+      const other = await dashboardAgentFor(otherRequester.email);
+      const staff = await dashboardAgentFor(staffUser.email);
+      const admin = await dashboardAgentFor(adminUser.email);
+
+      const anonymous = await request(app).get('/api/health');
+      const asOwner = await owner.get('/api/health');
+      const asOther = await other.get('/api/health');
+      const asStaff = await staff.get('/api/health');
+      const asAdmin = await admin.get('/api/health');
+
+      for (const response of [anonymous, asOwner, asOther, asStaff, asAdmin]) {
+        expect(response.status).toBe(200);
+        expect(response.body.status).toBe('ok');
+        expect(response.body.database).toBe('up');
+        expect(typeof response.body.time).toBe('string');
+      }
+    });
+
+    it('AUTH-01: a session with mustChangePassword is rejected on both dashboard endpoints (Lab 3 gate)', async () => {
+      const pwc = await prisma.user.upsert({
+        where: { emailNormalized: 'a4m_pwc@example.com' },
+        update: { name: 'A4 Matrix PwC', role: 'IT_STAFF', department: 'IT', passwordHash: localPasswordHash, mustChangePassword: true, isActive: true },
+        create: {
+          name: 'A4 Matrix PwC',
+          email: 'a4m_pwc@example.com',
+          emailNormalized: 'a4m_pwc@example.com',
+          department: 'IT',
+          role: 'IT_STAFF',
+          passwordHash: localPasswordHash,
+          mustChangePassword: true,
+          isActive: true
+        }
+      });
+
+      const gated = agentFor(pwc.email);
+      await gated.ready;
+
+      const requesterDashboard = await gated.agent.get('/api/dashboard/requester');
+      const staffDashboard = await gated.agent.get('/api/dashboard/staff');
+      // The health endpoint is public and must stay reachable regardless.
+      const health = await gated.agent.get('/api/health');
+
+      expect(requesterDashboard.status).toBe(403);
+      expect(requesterDashboard.body.error.code).toBe('PASSWORD_CHANGE_REQUIRED');
+      expect(staffDashboard.status).toBe(403);
+      expect(staffDashboard.body.error.code).toBe('PASSWORD_CHANGE_REQUIRED');
+      expect(health.status).toBe(200);
+    });
   });
 });
 
