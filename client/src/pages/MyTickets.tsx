@@ -24,6 +24,7 @@ type MyTicketsProps = { requesterId: string; onCreateTicket: () => void; onViewT
 
 const defaultPagination: Pagination = { page: 1, pageSize: 10, totalItems: 0, totalPages: 0, hasNextPage: false, hasPreviousPage: false };
 const defaultSort: Sort = { sortBy: 'createdAt', sortOrder: 'desc' };
+const allowedStatuses = new Set(['New', 'Open', 'In Progress', 'Waiting for Requester', 'Resolved', 'Closed', 'Reopened', 'Cancelled']);
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString();
@@ -37,6 +38,7 @@ export function MyTickets({ requesterId, onCreateTicket, onViewTicket }: MyTicke
   const [search, setSearch] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
   const [status, setStatus] = useState('');
+  const [statusGroup, setStatusGroup] = useState('');
   const [priority, setPriority] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [page, setPage] = useState(1);
@@ -57,6 +59,7 @@ export function MyTickets({ requesterId, onCreateTicket, onViewTicket }: MyTicke
     const params = new URLSearchParams();
     if (appliedSearch.trim()) params.set('search', appliedSearch.trim());
     if (status) params.set('status', status);
+    else if (statusGroup) params.set('statusGroup', statusGroup);
     if (priority) params.set('priority', priority);
     if (categoryId) params.set('categoryId', categoryId);
     if (sort.sortBy !== defaultSort.sortBy) params.set('sortBy', sort.sortBy);
@@ -83,6 +86,7 @@ export function MyTickets({ requesterId, onCreateTicket, onViewTicket }: MyTicke
     setSearch('');
     setAppliedSearch('');
     setStatus('');
+    setStatusGroup('');
     setPriority('');
     setCategoryId('');
     setSort(defaultSort);
@@ -101,6 +105,7 @@ export function MyTickets({ requesterId, onCreateTicket, onViewTicket }: MyTicke
     requesterId,
     appliedSearch,
     status,
+    statusGroup,
     priority,
     categoryId,
     sort.sortBy,
@@ -109,7 +114,24 @@ export function MyTickets({ requesterId, onCreateTicket, onViewTicket }: MyTicke
     pageSize
   ]);
 
-  const hasActiveFilters = Boolean(appliedSearch.trim() || status || priority || categoryId);
+  useEffect(() => {
+    const applyQueryFilters = () => {
+      const query = new URLSearchParams(window.location.search);
+      const queryStatus = query.get('status') ?? '';
+      const nextStatus = allowedStatuses.has(queryStatus) ? queryStatus : '';
+      const nextStatusGroup = query.get('statusGroup') === 'active' && !nextStatus ? 'active' : '';
+      setStatus(nextStatus);
+      setStatusGroup(nextStatusGroup);
+      setPriority('');
+      setCategoryId('');
+      setPage(1);
+    };
+    applyQueryFilters();
+    window.addEventListener('popstate', applyQueryFilters);
+    return () => window.removeEventListener('popstate', applyQueryFilters);
+  }, []);
+
+  const hasActiveFilters = Boolean(appliedSearch.trim() || status || statusGroup || priority || categoryId);
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -119,6 +141,7 @@ export function MyTickets({ requesterId, onCreateTicket, onViewTicket }: MyTicke
 
   const updateFilter = (setter: (value: string) => void, value: string) => {
     setter(value);
+    if (setter === setStatus && value) setStatusGroup('');
     setPage(1);
   };
 
@@ -126,9 +149,17 @@ export function MyTickets({ requesterId, onCreateTicket, onViewTicket }: MyTicke
     setSearch('');
     setAppliedSearch('');
     setStatus('');
+    setStatusGroup('');
     setPriority('');
     setCategoryId('');
     setSort(defaultSort);
+    setPage(1);
+  };
+
+  const removeQueryFilter = () => {
+    window.history.replaceState({}, '', '/');
+    setStatus('');
+    setStatusGroup('');
     setPage(1);
   };
 
@@ -143,10 +174,11 @@ export function MyTickets({ requesterId, onCreateTicket, onViewTicket }: MyTicke
     <section className="my-tickets-page" aria-labelledby="my-tickets-title">
       <div className="my-tickets-heading"><div><h1 id="my-tickets-title">My Tickets</h1><p>View and manage tickets submitted by the selected requester.</p></div>{!isEmpty && <button type="button" className="primary-action" onClick={onCreateTicket}>Create Ticket</button>}</div>
       <form className="ticket-filters" onSubmit={submitSearch} aria-label="Ticket filters">
+        {(status || statusGroup) && <div className="filter-chips" aria-label="Active filters"><span className="filter-chip">{statusGroup ? 'Active tickets' : `Status: ${status}`} <button type="button" aria-label="Remove status filter" onClick={removeQueryFilter}>×</button></span></div>}
         <label>Search tickets<input aria-label="Search tickets" placeholder="Ticket number or summary" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
         <label>Category<select aria-label="Category filter" value={categoryId} onChange={(event) => updateFilter(setCategoryId, event.target.value)}><option value="">All categories</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
         <label>Requested Priority<select aria-label="Requested Priority filter" value={priority} onChange={(event) => updateFilter(setPriority, event.target.value)}><option value="">All priorities</option>{['Low', 'Medium', 'High', 'Urgent'].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-        <label>Current Status<select aria-label="Current Status filter" value={status} onChange={(event) => updateFilter(setStatus, event.target.value)}><option value="">All statuses</option><option value="New">New</option></select></label>
+        <label>Current Status<select aria-label="Current Status filter" value={status} onChange={(event) => updateFilter(setStatus, event.target.value)}><option value="">All statuses</option>{['New', 'Open', 'In Progress', 'Waiting for Requester', 'Resolved', 'Closed', 'Reopened', 'Cancelled'].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
         <label>Sort by<select aria-label="Sort by" value={sort.sortBy} onChange={(event) => {
   setSort({ ...sort, sortBy: event.target.value });
   setPage(1);

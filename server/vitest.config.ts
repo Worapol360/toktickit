@@ -5,6 +5,7 @@ config({ path: '.env.test', override: true });
 
 export default defineConfig({
   test: {
-    environment: 'node'
+    environment: 'node',
+    fileParallelism: false
   }
 });
